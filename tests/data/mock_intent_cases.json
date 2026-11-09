@@ -1,0 +1,77 @@
+[
+  {
+    "name": "strict bandwidth lower bound",
+    "prompt": "Find a path from h1 to h4 with bandwidth greater than 20 Mbps.",
+    "source": "h1",
+    "destination": "h4",
+    "constraints": [["bandwidth", "GT", 20.0]],
+    "optimization": null
+  },
+  {
+    "name": "inclusive bandwidth lower bound",
+    "prompt": "Find a path from h1 to h4 with bandwidth at least 20 Mbps.",
+    "source": "h1",
+    "destination": "h4",
+    "constraints": [["bandwidth", "GTE", 20.0]],
+    "optimization": null
+  },
+  {
+    "name": "strict latency upper bound",
+    "prompt": "Find a path from h1 to h4 with latency below 50 ms.",
+    "source": "h1",
+    "destination": "h4",
+    "constraints": [["latency", "LT", 50.0]],
+    "optimization": null
+  },
+  {
+    "name": "exact latency target",
+    "prompt": "Find a path from h1 to h4 with latency exactly 50 ms.",
+    "source": "h1",
+    "destination": "h4",
+    "constraints": [["latency", "EQ", 50.0]],
+    "optimization": null
+  },
+  {
+    "name": "latency minimization",
+    "prompt": "Find the lowest-latency path from h1 to h4.",
+    "source": "h1",
+    "destination": "h4",
+    "constraints": [],
+    "optimization": ["latency", "MINIMIZE"]
+  },
+  {
+    "name": "bandwidth maximization",
+    "prompt": "Find the highest bandwidth path between h1 and h4.",
+    "source": "h1",
+    "destination": "h4",
+    "constraints": [],
+    "optimization": ["bandwidth", "MAXIMIZE"]
+  },
+  {
+    "name": "latency objective with bandwidth guard",
+    "prompt": "Minimize latency between h1 and h4 while maintaining bandwidth above 20 Mbps.",
+    "source": "h1",
+    "destination": "h4",
+    "constraints": [["bandwidth", "GT", 20.0]],
+    "optimization": ["latency", "MINIMIZE"]
+  },
+  {
+    "name": "simultaneous hard constraints",
+    "prompt": "Find a path from h1 to h4 with bandwidth at least 20 Mbps and latency below 50 ms.",
+    "source": "h1",
+    "destination": "h4",
+    "constraints": [
+      ["bandwidth", "GTE", 20.0],
+      ["latency", "LT", 50.0]
+    ],
+    "optimization": null
+  },
+  {
+    "name": "packet loss upper bound",
+    "prompt": "Find a path from h1 to h4 with packet loss < 1%.",
+    "source": "h1",
+    "destination": "h4",
+    "constraints": [["packet_loss", "LT", 1.0]],
+    "optimization": null
+  }
+]

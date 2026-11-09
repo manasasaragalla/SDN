@@ -1,0 +1,8 @@
+# Exact direct application and test versions. requirements.txt contains the
+# full hash-locked dependency graph and is the only file to install directly.
+pydantic==2.13.5
+pydantic-settings==2.15.0
+fastapi==0.141.1
+uvicorn==0.54.0
+pytest==9.1.1
+openai==3.45.0

@@ -1,0 +1,43 @@
+[Unit]
+Description=IntentFlow privileged SDN execution worker
+Requires=openvswitch-switch.service
+After=network.target openvswitch-switch.service
+Before=intentflow-api.service
+
+[Service]
+Type=simple
+User=root
+Group=intentflow-api
+WorkingDirectory=/opt/intentflow-sdn
+Environment=PYTHONPATH=/opt/intentflow-sdn
+Environment=INTENTFLOW_WORKER_SOCKET=/run/intentflow/worker.sock
+Environment=INTENTFLOW_EVIDENCE_JSON_DIR=/var/lib/intentflow/results
+Environment=INTENTFLOW_EVIDENCE_MARKDOWN_DIR=/var/lib/intentflow/reports
+EnvironmentFile=/etc/intentflow/worker.env
+ExecStart=/opt/intentflow-sdn/.venv-app/bin/python -m backend.api.worker --socket /run/intentflow/worker.sock
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=30s
+TimeoutStopSec=20min
+KillSignal=SIGTERM
+KillMode=mixed
+SendSIGKILL=yes
+UMask=0027
+
+RuntimeDirectory=intentflow
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
+
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadOnlyPaths=/opt/intentflow-sdn
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_KILL CAP_NET_ADMIN CAP_NET_RAW CAP_SETGID CAP_SETUID CAP_SYS_ADMIN CAP_SYS_CHROOT
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK AF_PACKET
+LockPersonality=true
+LimitCORE=0
+
+[Install]
+WantedBy=multi-user.target

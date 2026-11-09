@@ -1,0 +1,50 @@
+[Unit]
+Description=IntentFlow unprivileged FastAPI service
+Requires=intentflow-worker.service
+After=network.target intentflow-worker.service
+
+[Service]
+Type=simple
+User=intentflow-api
+Group=intentflow-api
+WorkingDirectory=/opt/intentflow-sdn
+Environment=PYTHONPATH=/opt/intentflow-sdn
+Environment=INTENTFLOW_WORKER_SOCKET=/run/intentflow/worker.sock
+Environment=INTENTFLOW_EVIDENCE_JSON_DIR=/var/lib/intentflow/results
+Environment=INTENTFLOW_EVIDENCE_MARKDOWN_DIR=/var/lib/intentflow/reports
+Environment=INTENTFLOW_TOPOLOGY_DB=/var/lib/intentflow/topologies/catalog.sqlite3
+Environment=INTENTFLOW_API_HOST=127.0.0.1
+Environment=INTENTFLOW_API_PORT=8000
+Environment=INTENTFLOW_RYU_BASE_URL=http://127.0.0.1:8080
+Environment=INTENTFLOW_CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+Environment=INTENTFLOW_COOKIE_SECURE=false
+EnvironmentFile=/etc/intentflow/api.env
+Environment=INTENTFLOW_ENVIRONMENT=production
+Environment=INTENTFLOW_AUTH_DISABLED=false
+UnsetEnvironment=INTENTFLOW_AUTH_DISABLED
+ExecStart=/opt/intentflow-sdn/.venv-app/bin/python -m backend.api.main
+Restart=on-failure
+RestartSec=3s
+TimeoutStartSec=30s
+TimeoutStopSec=20min
+KillSignal=SIGTERM
+KillMode=mixed
+SendSIGKILL=yes
+UMask=0027
+
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ReadOnlyPaths=/opt/intentflow-sdn /var/lib/intentflow/results /var/lib/intentflow/reports
+ReadWritePaths=/var/lib/intentflow/topologies
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LimitCORE=0
+
+[Install]
+WantedBy=multi-user.target
