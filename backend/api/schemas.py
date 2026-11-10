@@ -60,8 +60,12 @@ class IntentPreviewResponse(BaseModel):
     preview_id: UUID
     parser: str
     parser_kind: Literal["PROVIDER", "MOCK", "STRUCTURED"]
+    interpretation_status: Literal["VALID"] = "VALID"
     canonical_intent: CanonicalIntent
     capability_resolution: dict[str, Any]
+    planning_eligible: bool | None = None
+    execution_status: Literal["AVAILABLE", "UNAVAILABLE"]
+    execution_unavailable_reason: str | None = None
     execution_eligible: bool
     topology_status: Availability
     topology_identity: dict[str, Any] | None = None

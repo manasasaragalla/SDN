@@ -91,19 +91,34 @@ def plan_on_topology(
                     "eligible path; objective ranking was not performed."
                 )
             else:
-                reverse = optimization.direction.value == "MAXIMIZE"
+                maximize = optimization.direction.value == "MAXIMIZE"
                 selected = sorted(
                     eligible,
                     key=lambda item: (
-                        item["configured_metrics"][objective_key],
+                        -item["configured_metrics"][objective_key]
+                        if maximize
+                        else item["configured_metrics"][objective_key],
                         item["candidate_id"],
                     ),
-                    reverse=reverse,
                 )[0]
+                best_value = selected["configured_metrics"][objective_key]
+                tied_best = [
+                    item
+                    for item in eligible
+                    if item["configured_metrics"][objective_key] == best_value
+                ]
                 selection_reason = (
                     f"Ranked eligible candidates by configured "
                     f"{optimization.metric} ({optimization.direction.value.lower()})."
                 )
+                if len(tied_best) > 1:
+                    selection_reason += (
+                        f" {len(tied_best)} candidates tie for the best configured "
+                        f"{optimization.metric} value ({best_value} "
+                        f"{optimization.unit}); the selected path is the "
+                        "deterministic candidate-fingerprint tie-break. No "
+                        f"difference in {optimization.metric} is claimed."
+                    )
                 if len(eligible) == 1:
                     selection_reason += (
                         " Only one candidate satisfied all known hard constraints; "

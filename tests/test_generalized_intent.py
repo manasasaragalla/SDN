@@ -351,7 +351,8 @@ def test_mock_extracts_minimum_bandwidth(mock_llm):
     constraint = intent.constraints.metrics[0]
 
     assert constraint.metric == Metric.BANDWIDTH
-    assert constraint.min_value == 10
+    assert constraint.comparison == Comparison.GTE
+    assert constraint.value == 10
 
 
 def test_mock_extracts_maximum_latency(mock_llm):

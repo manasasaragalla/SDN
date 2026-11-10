@@ -58,6 +58,10 @@ For new generalized requests, preserve the exact comparison operator:
 - "<=" -> comparison = LTE
 - ">" -> comparison = GT
 - ">=" -> comparison = GTE
+- "below", "less than", or "under" -> comparison = LT
+- "at most", "no more than", or "less than or equal to" -> comparison = LTE
+- "above", "greater than", "more than", or "over" -> comparison = GT
+- "at least", "no less than", or "greater than or equal to" -> comparison = GTE
 - "exactly" -> comparison = EQ
 - "between X and Y" -> comparison = BETWEEN, with inclusive lower_bound
   and upper_bound
@@ -71,12 +75,23 @@ Examples:
 - "latency < 50 ms" -> metric LATENCY, comparison LT, value 50
 - "bandwidth >= 20 Mbps" -> metric BANDWIDTH, comparison GTE, value 20
 - "packet_loss <= 1%" -> metric PACKET_LOSS, comparison LTE, value 1
+- "packet loss below 1 percent" -> metric PACKET_LOSS, comparison LT,
+  value 1
+- "packet loss at most 1 percent" -> metric PACKET_LOSS, comparison LTE,
+  value 1
+- "bandwidth more than 20 Mbps" -> metric BANDWIDTH, comparison GT,
+  value 20
+- "bandwidth at least 20 Mbps" -> metric BANDWIDTH, comparison GTE,
+  value 20
 - "latency between 5 and 50 ms" -> comparison BETWEEN, lower_bound 5,
   upper_bound 50
 
-The legacy min_value/max_value representation remains accepted for
-backwards compatibility, but it cannot encode strict comparisons. Use the
-explicit comparison representation for generalized requests.
+For natural-language requests, always use the explicit comparison
+representation, including for "below", "under", "at most", and "no more
+than". Do not encode natural-language comparisons using legacy min_value or
+max_value fields: those fields cannot preserve strictness. The legacy fields
+remain accepted only for backwards compatibility with existing structured
+intents.
 
 Use optimization independently from hard constraints when the user requests it.
 One objective may coexist with any number of hard constraints. For example:
@@ -114,11 +129,11 @@ RULES:
   endpoints, preserve them so the backend can reject a mismatch.
 - Do not invent hosts, switches, links, paths or topology.
 - Do not invent numeric thresholds.
-- Interpret the explicit "<" operator and "less than" as strict LT.
-- Preserve the legacy min_value/max_value interpretation for "below",
-  "under", "at most", and "no more than".
+- Interpret "below", "less than", and "under" as strict LT.
+- Interpret "at most", "no more than", and "less than or equal to" as LTE.
 - Interpret "above", "over", "more than", and "greater than" as strict GT.
-- Interpret "at least" and "minimum" as GTE.
+- Interpret "at least", "no less than", "greater than or equal to", and
+  "minimum" as GTE.
 - Use optimization only when the user requests optimization.
 - Use the correct unit for every metric.
 - Multiple metrics may be present in one request.

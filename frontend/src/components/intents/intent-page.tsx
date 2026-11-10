@@ -77,22 +77,22 @@ export function IntentPage() {
   const sourceRef = useRef(source);
   const destinationRef = useRef(destination);
   const preview = useMemo(() => localIntentPreview(text, source, destination), [text, source, destination]);
-  const capabilityLabel = serverPreview?.capability_resolution.eligibility === "CAPABILITY_READY"
-    ? "Capability ready"
-    : serverPreview?.capability_resolution.eligibility === "CONDITIONAL"
-      ? "Capability conditional"
-      : serverPreview
-        ? "Capability blocked"
-        : null;
-  const planningLabel = serverPreview?.planning_result
-    ? {
-        SELECTED: "Candidate selected",
-        NO_PATH: "No path",
-        NO_ELIGIBLE_PATH: "No eligible candidate",
-        INSUFFICIENT_CONFIGURED_DATA: "Feasibility unknown",
-        INCOMPLETE_SEARCH: "Search incomplete",
-      }[serverPreview.planning_result.status]
+  const capabilityLabel = serverPreview
+    ? `Capabilities ${serverPreview.capability_resolution.eligibility === "CAPABILITY_READY"
+      ? "ready"
+      : serverPreview.capability_resolution.eligibility === "CONDITIONAL"
+        ? "conditional"
+        : "not ready"}`
     : null;
+  const planningLabel = serverPreview?.planning_eligible === true
+    ? "Eligible candidate selected"
+    : serverPreview?.planning_eligible === false
+      ? serverPreview.planning_result?.status === "NO_PATH"
+        ? "Planning ineligible · no path"
+        : "Planning ineligible · no eligible candidate"
+      : serverPreview?.planning_result
+        ? "Planning result inconclusive"
+        : "Planning not assessed";
 
   useEffect(() => {
     sourceRef.current = source;
@@ -285,11 +285,11 @@ export function IntentPage() {
           {API_BASE_URL ? serverPreview ? (
             <div className="parsed-content">
               <div className="parsed-status parsed-status-group">
-                <StatusPill tone="positive">Intent understood</StatusPill>
+                <StatusPill tone="positive">Intent valid</StatusPill>
                 {capabilityLabel && <StatusPill tone={serverPreview.capability_resolution.eligibility === "CAPABILITY_READY" ? "positive" : serverPreview.capability_resolution.eligibility === "CONDITIONAL" ? "warning" : "negative"}>{capabilityLabel}</StatusPill>}
-                {planningLabel && <StatusPill tone={serverPreview.planning_result?.status === "SELECTED" ? "positive" : serverPreview.planning_result?.status === "NO_ELIGIBLE_PATH" || serverPreview.planning_result?.status === "NO_PATH" ? "negative" : "warning"}>{planningLabel}</StatusPill>}
-                <StatusPill tone={serverPreview.execution_eligible ? "positive" : serverPreview.topology_identity?.mode === "DESIGN" ? "neutral" : "warning"}>
-                  {serverPreview.execution_eligible ? "Execution eligible" : serverPreview.topology_identity?.mode === "DESIGN" ? "DESIGN planning only" : "Not executable"}
+                {planningLabel && <StatusPill tone={serverPreview.planning_eligible === true ? "positive" : serverPreview.planning_eligible === false ? "negative" : "warning"}>Planning: {planningLabel}</StatusPill>}
+                <StatusPill tone={serverPreview.execution_status === "AVAILABLE" ? "positive" : "neutral"}>
+                  {serverPreview.execution_status === "AVAILABLE" ? "Execution available" : serverPreview.topology_identity?.mode === "DESIGN" ? "Execution unavailable · DESIGN topology" : "Execution unavailable"}
                 </StatusPill>
                 <span>{serverPreview.parser_kind === "MOCK" ? "Deterministic mock parser · limited language coverage" : `${serverPreview.parser_kind} · ${serverPreview.parser}`}</span>
               </div>
@@ -342,7 +342,7 @@ export function IntentPage() {
                 </details>}
               </div>}
             </div>
-          ) : previewError ? <div className="preview-unsupported" role="alert"><CircleHelp size={20} /><strong>{previewError.startsWith("Clarification required:") ? "Clarification needed" : "Backend preview failed"}</strong><span>{previewError} Demo interpretation is intentionally not substituted for the unavailable backend response.</span></div> : (
+          ) : previewError ? <div className="preview-unsupported" role="alert"><CircleHelp size={20} /><strong>{previewError.startsWith("Clarification required:") ? "Intent interpretation · Clarification required" : "Backend preview failed"}</strong><span>{previewError} No planning result is generated until the intent is clarified. Demo interpretation is intentionally not substituted for the unavailable backend response.</span></div> : (
             <div className="preview-empty"><div className="preview-empty-icon"><FileJson2 size={21} /></div><strong>{text.trim() ? "Preview is waiting for backend validation" : "Your parsed intent will appear here"}</strong><span>Submit an intent to request parsing and capability resolution from the configured backend.</span><div className="preview-empty-flow"><span>Intent</span><ArrowRight size={12} /><span>Backend preview</span></div></div>
           ) : text.trim() ? preview.supported ? (
             <div className="parsed-content">

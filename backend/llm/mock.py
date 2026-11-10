@@ -43,15 +43,20 @@ _TEXT_COMPARISON_RE = re.compile(
     r"\b(?P<metric>packet[\s_-]+loss|latency|bandwidth|throughput|delay)\b"
     r"(?:(?!\b(?:packet[\s_-]+loss|latency|bandwidth|throughput|delay)\b)"
     r"[\w\s'-]){0,48}?"
-    r"(?P<comparison>less than|greater than|above|over|more than|at least|"
-    r"minimum|at most|no more than|below|under|exactly|equal to)\s*"
+    r"(?P<comparison>less than or equal to|greater than or equal to|"
+    r"no less than|no more than|less than|greater than|at least|at most|"
+    r"above|over|more than|minimum|below|under|exactly|equal to)\s*"
     r"(?P<value>[\d.]+)\s*"
-    r"(?P<unit>mbps|ms|%)?",
+    r"(?P<unit>mbps|ms|%|percent)?",
     re.IGNORECASE,
 )
 _REVERSE_BANDWIDTH_RE = re.compile(
-    r"\b(?P<value>[\d.]+)\s*mbps\s*(?:or\s+)?"
-    r"(?P<comparison>or more|or higher|or above|or less|or lower)\b",
+    r"\b(?:(?P<comparison>less than or equal to|greater than or equal to|"
+    r"no less than|no more than|less than|greater than|at least|at most|"
+    r"above|over|more than|below|under)\s+)?"
+    r"(?P<value>[\d.]+)\s*mbps\s*(?:or\s+)?"
+    r"(?P<suffix_comparison>or more|or higher|or above|or less|or lower)?"
+    r"(?:\s+(?:of\s+)?(?:the\s+)?(?:bandwidth|throughput|capacity))?\b",
     re.IGNORECASE,
 )
 
@@ -73,7 +78,7 @@ _METRIC_PATTERNS = [
             re.IGNORECASE,
         ),
         re.compile(
-            r"(?:at\s+most|maximum|max|no\s+more\s+than|below|under)\s+([\d.]+)\s*mbps",
+            r"(?:at\s+most|maximum|max|no\s+more\s+than)\s+([\d.]+)\s*mbps",
             re.IGNORECASE,
         ),
         re.compile(r"(?:maximize|highest)\s+(?:the\s+)?bandwidth", re.IGNORECASE),
@@ -91,7 +96,7 @@ _METRIC_PATTERNS = [
             re.IGNORECASE,
         ),
         re.compile(
-            r"(?:at\s+most|maximum|max|no\s+more\s+than|below|under)\s+([\d.]+)\s*ms",
+            r"(?:at\s+most|maximum|max|no\s+more\s+than)\s+([\d.]+)\s*ms",
             re.IGNORECASE,
         ),
         re.compile(r"(?:maximize|highest)\s+(?:the\s+)?latency", re.IGNORECASE),
@@ -109,7 +114,7 @@ _METRIC_PATTERNS = [
             re.IGNORECASE,
         ),
         re.compile(
-            r"(?:at\s+most|maximum|max|no\s+more\s+than|below|under)\s+([\d.]+)\s*ms\s+jitter",
+            r"(?:at\s+most|maximum|max|no\s+more\s+than)\s+([\d.]+)\s*ms\s+jitter",
             re.IGNORECASE,
         ),
         re.compile(r"maximize\s+(?:the\s+)?jitter", re.IGNORECASE),
@@ -127,7 +132,7 @@ _METRIC_PATTERNS = [
             re.IGNORECASE,
         ),
         re.compile(
-            r"(?:at\s+most|maximum|max|no\s+more\s+than|below|under)\s+([\d.]+)\s*%\s+packet\s+loss",
+            r"(?:at\s+most|maximum|max|no\s+more\s+than)\s+([\d.]+)\s*%\s+packet\s+loss",
             re.IGNORECASE,
         ),
         re.compile(r"maximize\s+(?:the\s+)?packet\s+loss", re.IGNORECASE),
@@ -145,7 +150,7 @@ _METRIC_PATTERNS = [
             re.IGNORECASE,
         ),
         re.compile(
-            r"(?:at\s+most|maximum|max|no\s+more\s+than|below|under)\s+([\d.]+)\s*%\s+availability",
+            r"(?:at\s+most|maximum|max|no\s+more\s+than)\s+([\d.]+)\s*%\s+availability",
             re.IGNORECASE,
         ),
         re.compile(r"maximize\s+(?:the\s+)?availability", re.IGNORECASE),
@@ -293,15 +298,16 @@ class MockLLM(LLMProvider):
             "below": Comparison.LT,
             "under": Comparison.LT,
             "less than": Comparison.LT,
+            "less than or equal to": Comparison.LTE,
             "greater than": Comparison.GT,
-            "below": Comparison.LT,
-            "under": Comparison.LT,
+            "greater than or equal to": Comparison.GTE,
             "at most": Comparison.LTE,
             "no more than": Comparison.LTE,
             "above": Comparison.GT,
             "over": Comparison.GT,
             "more than": Comparison.GT,
             "at least": Comparison.GTE,
+            "no less than": Comparison.GTE,
             "minimum": Comparison.GTE,
             "or more": Comparison.GTE,
             "or higher": Comparison.GTE,
@@ -333,7 +339,13 @@ class MockLLM(LLMProvider):
             metric_name = re.sub(r"[\s_-]+", " ", match.group("metric").lower())
             metric = metric_map[metric_name]
             unit_value = match.group("unit")
-            if unit_value and unit_value.lower() != unit_map[metric].value.lower():
+            if (
+                unit_value
+                and unit_value.lower() not in {
+                    unit_map[metric].value.lower(),
+                    "percent" if metric == Metric.PACKET_LOSS else "",
+                }
+            ):
                 continue
             metrics.append(
                 MetricConstraint(
@@ -348,7 +360,14 @@ class MockLLM(LLMProvider):
             explicit_metrics.add(metric)
 
         for match in _REVERSE_BANDWIDTH_RE.finditer(text):
-            comparison = comparison_map[match.group("comparison").lower()]
+            if Metric.BANDWIDTH in explicit_metrics:
+                continue
+            comparison_text = (
+                match.group("comparison") or match.group("suffix_comparison")
+            )
+            if comparison_text is None:
+                continue
+            comparison = comparison_map[comparison_text.lower()]
             metrics.append(
                 MetricConstraint(
                     metric=Metric.BANDWIDTH,
@@ -470,7 +489,8 @@ class MockLLM(LLMProvider):
                 Metric.PACKET_LOSS,
                 MetricUnit.PERCENT,
                 Operator.MINIMIZE,
-                r"\b(?:minimi[sz]e|lowest|least)\b.{0,45}\bpacket[\s_-]+loss\b",
+                r"\b(?:minimi[sz]e|lowest|least)\s+(?:the\s+)?"
+                r"packet[\s_-]+loss\b",
             ),
         )
         for metric, unit, direction, pattern in patterns:

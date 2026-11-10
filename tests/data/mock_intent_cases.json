@@ -16,6 +16,30 @@
     "optimization": null
   },
   {
+    "name": "strict packet loss upper bound",
+    "prompt": "Find a path from h1 to h4 with packet loss below 1 percent.",
+    "source": "h1",
+    "destination": "h4",
+    "constraints": [["packet_loss", "LT", 1.0]],
+    "optimization": null
+  },
+  {
+    "name": "inclusive packet loss upper bound",
+    "prompt": "Find a path from h1 to h4 with packet loss at most 1 percent.",
+    "source": "h1",
+    "destination": "h4",
+    "constraints": [["packet_loss", "LTE", 1.0]],
+    "optimization": null
+  },
+  {
+    "name": "strict bandwidth lower bound paraphrase",
+    "prompt": "Find a path from h1 to h4 with bandwidth more than 20 Mbps.",
+    "source": "h1",
+    "destination": "h4",
+    "constraints": [["bandwidth", "GT", 20.0]],
+    "optimization": null
+  },
+  {
     "name": "strict latency upper bound",
     "prompt": "Find a path from h1 to h4 with latency below 50 ms.",
     "source": "h1",
@@ -53,6 +77,17 @@
     "source": "h1",
     "destination": "h4",
     "constraints": [["bandwidth", "GT", 20.0]],
+    "optimization": ["latency", "MINIMIZE"]
+  },
+  {
+    "name": "combined bandwidth and packet loss constraints with latency objective",
+    "prompt": "Find a route from h1 to h4 that has at least 20 Mbps bandwidth and keeps packet loss below 1 percent, preferably with the lowest latency.",
+    "source": "h1",
+    "destination": "h4",
+    "constraints": [
+      ["packet_loss", "LT", 1.0],
+      ["bandwidth", "GTE", 20.0]
+    ],
     "optimization": ["latency", "MINIMIZE"]
   },
   {

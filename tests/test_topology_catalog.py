@@ -202,6 +202,10 @@ def test_active_design_topology_drives_candidate_planning(
     assert body["topology_identity"]["version"] == 1
     assert body["topology_identity"]["mode"] == "DESIGN"
     assert result["topology_identity"] == body["topology_identity"]
+    assert body["interpretation_status"] == "VALID"
+    assert body["planning_eligible"] is True
+    assert body["execution_status"] == "UNAVAILABLE"
+    assert "DESIGN" in body["execution_unavailable_reason"]
     assert body["execution_eligible"] is False
     assert result["status"] == "SELECTED"
     selected = next(
@@ -211,6 +215,78 @@ def test_active_design_topology_drives_candidate_planning(
     )
     assert selected["path"] == expected_path
     assert "not achieved throughput" in result["provenance"]
+
+
+def test_design_plan_reports_no_eligible_candidate_as_ineligible(api_client):
+    client, _ = api_client
+    _create_active(client)
+    response = client.post(
+        "/api/v1/intents/preview",
+        json={
+            "natural_language": (
+                "Find a path from h1 to h4 with bandwidth above 1000 Mbps."
+            ),
+            "source": "h1",
+            "destination": "h4",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["interpretation_status"] == "VALID"
+    assert body["planning_result"]["status"] == "NO_ELIGIBLE_PATH"
+    assert body["planning_eligible"] is False
+    assert body["execution_status"] == "UNAVAILABLE"
+
+
+def test_equal_configured_objective_values_explain_deterministic_tie(api_client):
+    client, _ = api_client
+    topology = _diamond_topology()
+    for link in topology.graph.links:
+        link.delay_ms = 0
+    _create_active(client, topology)
+
+    response = client.post(
+        "/api/v1/intents/preview",
+        json={
+            "natural_language": "Find the lowest-latency path from h1 to h4.",
+            "source": "h1",
+            "destination": "h4",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()["planning_result"]
+    assert result["status"] == "SELECTED"
+    assert all(
+        candidate["configured_metrics"]["latency_ms"] == 0
+        for candidate in result["candidates"]
+    )
+    assert result["selected_candidate_id"] == min(
+        candidate["candidate_id"] for candidate in result["candidates"]
+    )
+    assert "tie for the best configured latency value (0.0 ms)" in result[
+        "selection_reason"
+    ]
+    assert "No difference in latency is claimed." in result["selection_reason"]
+
+
+def test_clarification_response_has_no_fabricated_plan(api_client):
+    client, _ = api_client
+    _create_active(client)
+
+    response = client.post(
+        "/api/v1/intents/preview",
+        json={
+            "natural_language": "Find a faster path.",
+            "source": "h1",
+            "destination": "h4",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"].startswith("Clarification required:")
+    assert "planning_result" not in response.json()
 
 
 def test_arbitrary_active_topology_supports_path_ranking_and_constraints(api_client):

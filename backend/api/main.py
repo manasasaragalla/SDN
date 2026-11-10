@@ -696,19 +696,49 @@ def create_app(
                 "topology and activate it, or make a complete LIVE discovery "
                 "available before planning."
             )
+
+        planning_eligible = None
+        if planning_result is not None:
+            if planning_result["status"] == "SELECTED":
+                planning_eligible = True
+            elif planning_result["status"] in {"NO_PATH", "NO_ELIGIBLE_PATH"}:
+                planning_eligible = False
+
         if topology_mode == TopologyMode.DESIGN:
             explanation.append(
                 "DESIGN planning cannot be executed on the network. Saving or "
                 "activating a design never starts Mininet or installs flows."
             )
+        execution_unavailable_reason = None
+        if not eligible:
+            if topology_mode == TopologyMode.DESIGN:
+                execution_unavailable_reason = (
+                    "DESIGN topologies support planning only and cannot be executed."
+                )
+            elif topology_mode != TopologyMode.LIVE or topology_status != Availability.CONNECTED:
+                execution_unavailable_reason = (
+                    "A complete, verified LIVE topology is required for execution."
+                )
+            elif canonical.requested_actions:
+                execution_unavailable_reason = (
+                    "Requested actions are not supported by this execution pipeline."
+                )
+            elif not resolution.capability_ready:
+                execution_unavailable_reason = (
+                    "One or more requested capabilities are not ready for execution."
+                )
 
         preview_id = preview_store.save(canonical, eligible)
         return IntentPreviewResponse(
             preview_id=preview_id,
             parser=parser_name,
             parser_kind=parser_kind,
+            interpretation_status="VALID",
             canonical_intent=canonical,
             capability_resolution=resolution.model_dump(mode="json"),
+            planning_eligible=planning_eligible,
+            execution_status="AVAILABLE" if eligible else "UNAVAILABLE",
+            execution_unavailable_reason=execution_unavailable_reason,
             execution_eligible=eligible,
             topology_status=topology_status,
             topology_identity=topology_identity,

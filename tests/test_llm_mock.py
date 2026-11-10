@@ -69,6 +69,14 @@ def test_unsupported_phrasing_raises_llm_parse_error():
         ("latency below 50 ms between h1 and h4", "latency", Comparison.LT, 50),
         ("latency at most 50 ms between h1 and h4", "latency", Comparison.LTE, 50),
         ("bandwidth at least 20 Mbps between h1 and h4", "bandwidth", Comparison.GTE, 20),
+        ("packet loss less than or equal to 1 percent between h1 and h4", "packet_loss", Comparison.LTE, 1),
+        ("bandwidth no less than 20 Mbps between h1 and h4", "bandwidth", Comparison.GTE, 20),
+        ("latency under 50 ms between h1 and h4", "latency", Comparison.LT, 50),
+        ("bandwidth over 20 Mbps between h1 and h4", "bandwidth", Comparison.GT, 20),
+        ("packet loss below 1 percent between h1 and h4", "packet_loss", Comparison.LT, 1),
+        ("packet loss at most 1 percent between h1 and h4", "packet_loss", Comparison.LTE, 1),
+        ("bandwidth more than 20 Mbps between h1 and h4", "bandwidth", Comparison.GT, 20),
+        ("bandwidth at least 20 Mbps between h1 and h4", "bandwidth", Comparison.GTE, 20),
     ],
 )
 def test_mock_preserves_strict_and_inclusive_comparisons(
@@ -112,6 +120,26 @@ def test_mock_parses_reported_multiple_constraint_wording():
     ] == [
         ("bandwidth", Comparison.GTE, 20),
         ("latency", Comparison.LT, 50),
+    ]
+
+
+def test_mock_parses_combined_bandwidth_loss_and_latency_objective():
+    canonical = normalize_intent(
+        MockLLM().parse_intent(
+            "Find a route from h1 to h4 that has at least 20 Mbps bandwidth "
+            "and keeps packet loss below 1 percent, preferably with the "
+            "lowest latency."
+        )
+    ).canonical
+
+    assert canonical.optimization.metric == "latency"
+    assert canonical.optimization.direction.value == "MINIMIZE"
+    assert [
+        (item.metric, item.comparison, item.value)
+        for item in canonical.constraints
+    ] == [
+        ("packet_loss", Comparison.LT, 1),
+        ("bandwidth", Comparison.GTE, 20),
     ]
 
 

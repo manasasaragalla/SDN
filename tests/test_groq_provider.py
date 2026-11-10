@@ -10,6 +10,7 @@ from backend.llm.base import (
     LLMProviderUnavailableError,
 )
 from backend.llm.groq_provider import DEFAULT_MODEL, GROQ_BASE_URL, GroqLLM
+from backend.llm.prompt import SYSTEM_PROMPT
 from backend.models.canonical_intent import Comparison
 from backend.models.intent import (
     Objective,
@@ -137,31 +138,123 @@ def test_groq_mixed_legacy_objective_and_generalized_constraint_normalize():
                         {
                             "metric": "BANDWIDTH",
                             "unit": "Mbps",
-                            "comparison": "GT",
+                            "comparison": "GTE",
                             "value": 20,
                             "lower_bound": None,
                             "upper_bound": None,
                             "min_value": None,
                             "max_value": None,
                             "optimization": None,
-                        }
+                        },
+                        {
+                            "metric": "PACKET_LOSS",
+                            "unit": "%",
+                            "comparison": "LT",
+                            "value": 1,
+                        },
                     ],
                 },
             }
         )
     )
     parsed = GroqLLM(api_key="test-key", client=client).parse_intent(
-        "Minimize latency between h1 and h4 while maintaining bandwidth above 20 Mbps."
+        "Find a route from h1 to h4 that has at least 20 Mbps bandwidth "
+        "and keeps packet loss below 1 percent, preferably with the lowest latency."
     )
 
     canonical = normalize_intent(parsed).canonical
     assert parsed.objective == Objective.MINIMIZE_LATENCY
     assert canonical.optimization.metric == "latency"
     assert canonical.optimization.direction.value == "MINIMIZE"
-    assert len(canonical.constraints) == 1
-    assert canonical.constraints[0].metric == "bandwidth"
-    assert canonical.constraints[0].comparison == Comparison.GT
-    assert canonical.constraints[0].value == 20
+    assert [
+        (item.metric, item.comparison, item.value)
+        for item in canonical.constraints
+    ] == [
+        ("bandwidth", Comparison.GTE, 20),
+        ("packet_loss", Comparison.LT, 1),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("prompt", "metric", "unit", "comparison", "value"),
+    [
+        (
+            "Find a path from h1 to h4 with packet loss below 1 percent.",
+            "PACKET_LOSS",
+            "%",
+            "LT",
+            1,
+        ),
+        (
+            "Find a path from h1 to h4 with packet loss at most 1 percent.",
+            "PACKET_LOSS",
+            "%",
+            "LTE",
+            1,
+        ),
+        (
+            "Find a path from h1 to h4 with bandwidth more than 20 Mbps.",
+            "BANDWIDTH",
+            "Mbps",
+            "GT",
+            20,
+        ),
+        (
+            "Find a path from h1 to h4 with bandwidth at least 20 Mbps.",
+            "BANDWIDTH",
+            "Mbps",
+            "GTE",
+            20,
+        ),
+    ],
+)
+def test_groq_explicit_comparisons_survive_canonical_normalization(
+    prompt,
+    metric,
+    unit,
+    comparison,
+    value,
+):
+    client = Mock()
+    client.chat.completions.create.return_value = _completion(
+        json.dumps(
+            {
+                "objective": None,
+                "source": "h1",
+                "destination": "h4",
+                "traffic_selector": None,
+                "target": None,
+                "constraints": {
+                    "loss_tolerance": None,
+                    "metrics": [
+                        {
+                            "metric": metric,
+                            "unit": unit,
+                            "comparison": comparison,
+                            "value": value,
+                        }
+                    ],
+                },
+            }
+        )
+    )
+
+    parsed = GroqLLM(api_key="test-key", client=client).parse_intent(prompt)
+    canonical = normalize_intent(parsed).canonical
+
+    assert canonical.constraints[0].metric == metric.lower()
+    assert canonical.constraints[0].comparison == Comparison(comparison)
+    assert canonical.constraints[0].value == value
+
+
+def test_shared_prompt_defines_strict_and_inclusive_language():
+    for instruction in (
+        '"below", "less than", or "under" -> comparison = LT',
+        '"at most", "no more than", or "less than or equal to" -> comparison = LTE',
+        '"above", "greater than", "more than", or "over" -> comparison = GT',
+        '"at least", "no less than", or "greater than or equal to" -> comparison = GTE',
+    ):
+        assert instruction in SYSTEM_PROMPT
 
 
 @pytest.mark.parametrize("status_code", [429, 503])

@@ -51,12 +51,16 @@ export interface IntentPreviewResponse {
   preview_id: string;
   parser: string;
   parser_kind: "PROVIDER" | "MOCK" | "STRUCTURED";
+  interpretation_status: "VALID";
   canonical_intent: CanonicalIntent;
   capability_resolution: {
     eligibility: "CAPABILITY_READY" | "CONDITIONAL" | "INELIGIBLE";
     reasons: string[];
     [key: string]: unknown;
   };
+  planning_eligible: boolean | null;
+  execution_status: "AVAILABLE" | "UNAVAILABLE";
+  execution_unavailable_reason: string | null;
   execution_eligible: boolean;
   topology_status: ApiAvailability;
   topology_identity: TopologyIdentity | null;
