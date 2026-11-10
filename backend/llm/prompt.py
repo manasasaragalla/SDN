@@ -50,6 +50,14 @@ SUPPORTED OPTIMIZATION OPERATORS:
 - MINIMIZE
 - MAXIMIZE
 
+For top-level objective values, use only:
+- MINIMIZE_LATENCY
+- MAXIMIZE_BANDWIDTH
+
+MIN_BANDWIDTH is a legacy input alias for a minimum bandwidth requirement,
+not a bandwidth optimization objective. When received in legacy structured
+input, it is normalized to a bandwidth GTE constraint.
+
 CONSTRAINT INTERPRETATION:
 
 For new generalized requests, preserve the exact comparison operator:
@@ -147,16 +155,11 @@ RULES:
   context in the supplied user message, request clarification instead of
   inventing conversation history.
 
-LEGACY COMPATIBILITY:
-
-For these existing requests, preserve the legacy representation:
-
-"Give h1 to h4 the lowest-latency path":
-objective = MINIMIZE_LATENCY
-
-"Provide at least 10 Mbps between h1 and h4":
-objective = MIN_BANDWIDTH
-target.bandwidth_mbps = 10
+For optimization-only requests, use the canonical top-level objective where
+applicable: MINIMIZE_LATENCY or MAXIMIZE_BANDWIDTH. For bandwidth minimum
+requests, use an explicit GTE metric constraint. For older structured input,
+MIN_BANDWIDTH plus target.bandwidth_mbps remains accepted and normalizes to
+that same GTE constraint.
 
 For new generalized requests, use constraints.metrics.
 For optimization-only requests use a metric entry with optimization set to

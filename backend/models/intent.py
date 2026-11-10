@@ -31,6 +31,8 @@ from backend.models.canonical_intent import Comparison
 
 class Objective(str, Enum):
     MINIMIZE_LATENCY = "MINIMIZE_LATENCY"
+    MAXIMIZE_BANDWIDTH = "MAXIMIZE_BANDWIDTH"
+    # Legacy minimum-throughput target, normalized as a GTE constraint.
     MIN_BANDWIDTH = "MIN_BANDWIDTH"
 
 

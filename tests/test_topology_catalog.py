@@ -240,6 +240,56 @@ def test_design_plan_reports_no_eligible_candidate_as_ineligible(api_client):
     assert body["execution_status"] == "UNAVAILABLE"
 
 
+def test_two_hundred_mbps_minimum_is_rejected_by_existing_design_topology(api_client):
+    client, _ = api_client
+    _create_active(client)
+    response = client.post(
+        "/api/v1/intents/preview",
+        json={
+            "natural_language": (
+                "Find a path from h1 to h4 with bandwidth at least 200 Mbps."
+            ),
+            "source": "h1",
+            "destination": "h4",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["canonical_intent"]["constraints"][0]["comparison"] == "GTE"
+    assert body["canonical_intent"]["constraints"][0]["value"] == 200
+    assert body["planning_result"]["status"] == "NO_ELIGIBLE_PATH"
+    assert all(
+        candidate["status"] == "REJECTED"
+        for candidate in body["planning_result"]["candidates"]
+    )
+
+
+def test_two_hundred_mbps_minimum_is_rejected_by_existing_design_topology(api_client):
+    client, _ = api_client
+    _create_active(client)
+    response = client.post(
+        "/api/v1/intents/preview",
+        json={
+            "natural_language": (
+                "Find a path from h1 to h4 with bandwidth at least 200 Mbps."
+            ),
+            "source": "h1",
+            "destination": "h4",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["canonical_intent"]["constraints"][0]["comparison"] == "GTE"
+    assert body["canonical_intent"]["constraints"][0]["value"] == 200
+    assert body["planning_result"]["status"] == "NO_ELIGIBLE_PATH"
+    assert all(
+        candidate["status"] == "REJECTED"
+        for candidate in body["planning_result"]["candidates"]
+    )
+
+
 def test_combined_design_preview_json_keeps_planning_and_execution_independent(api_client):
     client, _ = api_client
     _create_active(client)

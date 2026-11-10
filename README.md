@@ -198,6 +198,11 @@ structured intents into a `CanonicalIntent`. Canonical models support:
 - `MINIMIZE` or `MAXIMIZE` optimization.
 - Requested actions without interpreting them as executable instructions.
 
+Provider top-level optimization objectives use `MINIMIZE_LATENCY` and
+`MAXIMIZE_BANDWIDTH`. The legacy `MIN_BANDWIDTH` value is not a synonym for
+maximization: when paired with its legacy target it normalizes to a bandwidth
+`GTE` hard constraint. Unknown objective values are rejected.
+
 Legacy execution hints identify existing legacy pipelines without changing the
 canonical intent's declarative semantics.
 

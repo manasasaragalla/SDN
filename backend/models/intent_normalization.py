@@ -140,6 +140,16 @@ def normalize_intent(intent: StructuredIntent) -> NormalizedIntent:
             direction=OptimizationDirection.MINIMIZE,
             unit="ms",
         )
+    elif intent.objective == Objective.MAXIMIZE_BANDWIDTH:
+        if intent.target is not None:
+            raise ValueError(
+                "MAXIMIZE_BANDWIDTH cannot be combined with a legacy target"
+            )
+        optimization = OptimizationObjective(
+            metric="bandwidth",
+            direction=OptimizationDirection.MAXIMIZE,
+            unit="Mbps",
+        )
     elif intent.objective == Objective.MIN_BANDWIDTH:
         if intent.target is None or intent.target.bandwidth_mbps is None:
             raise ValueError(

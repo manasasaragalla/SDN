@@ -218,6 +218,13 @@ class MockLLM(LLMProvider):
                     objective = Objective.MINIMIZE_LATENCY
                     metrics.remove(metric)
                     break
+                if (
+                    metric.metric == Metric.BANDWIDTH
+                    and metric.optimization == Operator.MAXIMIZE
+                ):
+                    objective = Objective.MAXIMIZE_BANDWIDTH
+                    metrics.remove(metric)
+                    break
 
             legacy_bandwidth = re.search(
                 r"\bprovide\s+at\s+least\s+([\d.]+)\s*mbps\b",

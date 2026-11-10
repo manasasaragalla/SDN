@@ -56,6 +56,22 @@ def test_normalize_legacy_bandwidth_to_gte_and_preserve_target():
     assert result.legacy_execution_hint == LegacyExecutionHint.MIN_BANDWIDTH
 
 
+def test_normalize_canonical_maximize_bandwidth_objective():
+    intent = StructuredIntent(
+        objective=Objective.MAXIMIZE_BANDWIDTH,
+        source="h1",
+        destination="h4",
+    )
+
+    result = normalize_intent(intent)
+
+    assert result.canonical.optimization.metric == "bandwidth"
+    assert result.canonical.optimization.direction == OptimizationDirection.MAXIMIZE
+    assert result.canonical.optimization.unit == "Mbps"
+    assert result.canonical.constraints == []
+    assert result.legacy_execution_hint is None
+
+
 def test_loss_tolerance_is_preserved_as_metadata_not_packet_loss():
     legacy = StructuredIntent(
         objective=Objective.MINIMIZE_LATENCY,

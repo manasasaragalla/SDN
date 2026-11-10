@@ -319,6 +319,98 @@ def test_llm_output_accepts_legacy_objective_with_generalized_metrics():
     ]
 
 
+@pytest.mark.parametrize(
+    ("objective", "metric", "direction"),
+    [
+        ("MINIMIZE_LATENCY", "latency", "MINIMIZE"),
+        ("MAXIMIZE_BANDWIDTH", "bandwidth", "MAXIMIZE"),
+    ],
+)
+def test_llm_output_accepts_canonical_objectives(objective, metric, direction):
+    output = LLMIntentOutput(
+        objective=objective,
+        source="h1",
+        destination="h4",
+    )
+
+    canonical = normalize_intent(output.to_structured_intent()).canonical
+
+    assert canonical.optimization.metric == metric
+    assert canonical.optimization.direction.value == direction
+
+
+def test_legacy_min_bandwidth_alias_normalizes_to_minimum_constraint():
+    output = LLMIntentOutput(
+        objective="MIN_BANDWIDTH",
+        source="h1",
+        destination="h4",
+        target={"bandwidth_mbps": 20},
+    )
+
+    canonical = normalize_intent(output.to_structured_intent()).canonical
+
+    assert canonical.optimization is None
+    assert len(canonical.constraints) == 1
+    assert canonical.constraints[0].metric == "bandwidth"
+    assert canonical.constraints[0].comparison == Comparison.GTE
+    assert canonical.constraints[0].value == 20
+
+
+def test_llm_output_does_not_coerce_unknown_objective():
+    with pytest.raises(ValidationError):
+        LLMIntentOutput(
+            objective="OPTIMIZE_BANDWIDTH",
+            source="h1",
+            destination="h4",
+            constraints=Constraints(
+                metrics=[
+                    MetricConstraint(
+                        metric=Metric.BANDWIDTH,
+                        unit=MetricUnit.MBPS,
+                        comparison=Comparison.GTE,
+                        value=20,
+                    )
+                ]
+            ),
+        )
+
+
+def test_canonical_bandwidth_objective_accepts_multiple_hard_constraints():
+    output = LLMIntentOutput(
+        objective="MAXIMIZE_BANDWIDTH",
+        source="h1",
+        destination="h4",
+        constraints=Constraints(
+            metrics=[
+                MetricConstraint(
+                    metric=Metric.BANDWIDTH,
+                    unit=MetricUnit.MBPS,
+                    comparison=Comparison.GTE,
+                    value=20,
+                ),
+                MetricConstraint(
+                    metric=Metric.PACKET_LOSS,
+                    unit=MetricUnit.PERCENT,
+                    comparison=Comparison.LT,
+                    value=1,
+                ),
+            ]
+        ),
+    )
+
+    canonical = normalize_intent(output.to_structured_intent()).canonical
+
+    assert canonical.optimization.metric == "bandwidth"
+    assert canonical.optimization.direction.value == "MAXIMIZE"
+    assert [
+        (constraint.metric, constraint.comparison, constraint.value)
+        for constraint in canonical.constraints
+    ] == [
+        ("bandwidth", Comparison.GTE, 20),
+        ("packet_loss", Comparison.LT, 1),
+    ]
+
+
 # ---------------------------------------------------------
 # 4. Mock provider
 # ---------------------------------------------------------

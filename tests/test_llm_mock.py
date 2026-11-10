@@ -192,6 +192,17 @@ def test_mock_parses_end_to_end_acceptance_intents(
         ) == expected_optimization
 
 
+def test_mock_uses_canonical_maximize_bandwidth_objective():
+    intent = MockLLM().parse_intent(
+        "Maximize bandwidth between h1 and h4."
+    )
+
+    assert intent.objective == Objective.MAXIMIZE_BANDWIDTH
+    canonical = normalize_intent(intent).canonical
+    assert canonical.optimization.metric == "bandwidth"
+    assert canonical.optimization.direction.value == "MAXIMIZE"
+
+
 def test_mock_parses_between_as_an_inclusive_range():
     normalized = normalize_intent(
         MockLLM().parse_intent(
