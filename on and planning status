@@ -1,0 +1,744 @@
+[1mdiff --git a/backend/api/main.py b/backend/api/main.py[m
+[1mindex d08bfb6..9d287e7 100644[m
+[1m--- a/backend/api/main.py[m
+[1m+++ b/backend/api/main.py[m
+[36m@@ -696,19 +696,49 @@[m [mdef create_app([m
+                 "topology and activate it, or make a complete LIVE discovery "[m
+                 "available before planning."[m
+             )[m
+[32m+[m
+[32m+[m[32m        planning_eligible = None[m
+[32m+[m[32m        if planning_result is not None:[m
+[32m+[m[32m            if planning_result["status"] == "SELECTED":[m
+[32m+[m[32m                planning_eligible = True[m
+[32m+[m[32m            elif planning_result["status"] in {"NO_PATH", "NO_ELIGIBLE_PATH"}:[m
+[32m+[m[32m                planning_eligible = False[m
+[32m+[m
+         if topology_mode == TopologyMode.DESIGN:[m
+             explanation.append([m
+                 "DESIGN planning cannot be executed on the network. Saving or "[m
+                 "activating a design never starts Mininet or installs flows."[m
+             )[m
+[32m+[m[32m        execution_unavailable_reason = None[m
+[32m+[m[32m        if not eligible:[m
+[32m+[m[32m            if topology_mode == TopologyMode.DESIGN:[m
+[32m+[m[32m                execution_unavailable_reason = ([m
+[32m+[m[32m                    "DESIGN topologies support planning only and cannot be executed."[m
+[32m+[m[32m                )[m
+[32m+[m[32m            elif topology_mode != TopologyMode.LIVE or topology_status != Availability.CONNECTED:[m
+[32m+[m[32m                execution_unavailable_reason = ([m
+[32m+[m[32m                    "A complete, verified LIVE topology is required for execution."[m
+[32m+[m[32m                )[m
+[32m+[m[32m            elif canonical.requested_actions:[m
+[32m+[m[32m                execution_unavailable_reason = ([m
+[32m+[m[32m                    "Requested actions are not supported by this execution pipeline."[m
+[32m+[m[32m                )[m
+[32m+[m[32m            elif not resolution.capability_ready:[m
+[32m+[m[32m                execution_unavailable_reason = ([m
+[32m+[m[32m                    "One or more requested capabilities are not ready for execution."[m
+[32m+[m[32m                )[m
+ [m
+         preview_id = preview_store.save(canonical, eligible)[m
+         return IntentPreviewResponse([m
+             preview_id=preview_id,[m
+             parser=parser_name,[m
+             parser_kind=parser_kind,[m
+[32m+[m[32m            interpretation_status="VALID",[m
+             canonical_intent=canonical,[m
+             capability_resolution=resolution.model_dump(mode="json"),[m
+[32m+[m[32m            planning_eligible=planning_eligible,[m
+[32m+[m[32m            execution_status="AVAILABLE" if eligible else "UNAVAILABLE",[m
+[32m+[m[32m            execution_unavailable_reason=execution_unavailable_reason,[m
+             execution_eligible=eligible,[m
+             topology_status=topology_status,[m
+             topology_identity=topology_identity,[m
+[1mdiff --git a/backend/api/schemas.py b/backend/api/schemas.py[m
+[1mindex 4dcc527..32841bd 100644[m
+[1m--- a/backend/api/schemas.py[m
+[1m+++ b/backend/api/schemas.py[m
+[36m@@ -60,8 +60,12 @@[m [mclass IntentPreviewResponse(BaseModel):[m
+     preview_id: UUID[m
+     parser: str[m
+     parser_kind: Literal["PROVIDER", "MOCK", "STRUCTURED"][m
+[32m+[m[32m    interpretation_status: Literal["VALID"] = "VALID"[m
+     canonical_intent: CanonicalIntent[m
+     capability_resolution: dict[str, Any][m
+[32m+[m[32m    planning_eligible: bool | None = None[m
+[32m+[m[32m    execution_status: Literal["AVAILABLE", "UNAVAILABLE"][m
+[32m+[m[32m    execution_unavailable_reason: str | None = None[m
+     execution_eligible: bool[m
+     topology_status: Availability[m
+     topology_identity: dict[str, Any] | None = None[m
+[1mdiff --git a/backend/llm/mock.py b/backend/llm/mock.py[m
+[1mindex 54d22f1..93db08b 100644[m
+[1m--- a/backend/llm/mock.py[m
+[1m+++ b/backend/llm/mock.py[m
+[36m@@ -43,15 +43,20 @@[m [m_TEXT_COMPARISON_RE = re.compile([m
+     r"\b(?P<metric>packet[\s_-]+loss|latency|bandwidth|throughput|delay)\b"[m
+     r"(?:(?!\b(?:packet[\s_-]+loss|latency|bandwidth|throughput|delay)\b)"[m
+     r"[\w\s'-]){0,48}?"[m
+[31m-    r"(?P<comparison>less than|greater than|above|over|more than|at least|"[m
+[31m-    r"minimum|at most|no more than|below|under|exactly|equal to)\s*"[m
+[32m+[m[32m    r"(?P<comparison>less than or equal to|greater than or equal to|"[m
+[32m+[m[32m    r"no less than|no more than|less than|greater than|at least|at most|"[m
+[32m+[m[32m    r"above|over|more than|minimum|below|under|exactly|equal to)\s*"[m
+     r"(?P<value>[\d.]+)\s*"[m
+[31m-    r"(?P<unit>mbps|ms|%)?",[m
+[32m+[m[32m    r"(?P<unit>mbps|ms|%|percent)?",[m
+     re.IGNORECASE,[m
+ )[m
+ _REVERSE_BANDWIDTH_RE = re.compile([m
+[31m-    r"\b(?P<value>[\d.]+)\s*mbps\s*(?:or\s+)?"[m
+[31m-    r"(?P<comparison>or more|or higher|or above|or less|or lower)\b",[m
+[32m+[m[32m    r"\b(?:(?P<comparison>less than or equal to|greater than or equal to|"[m
+[32m+[m[32m    r"no less than|no more than|less than|greater than|at least|at most|"[m
+[32m+[m[32m    r"above|over|more than|below|under)\s+)?"[m
+[32m+[m[32m    r"(?P<value>[\d.]+)\s*mbps\s*(?:or\s+)?"[m
+[32m+[m[32m    r"(?P<suffix_comparison>or more|or higher|or above|or less|or lower)?"[m
+[32m+[m[32m    r"(?:\s+(?:of\s+)?(?:the\s+)?(?:bandwidth|throughput|capacity))?\b",[m
+     re.IGNORECASE,[m
+ )[m
+ [m
+[36m@@ -73,7 +78,7 @@[m [m_METRIC_PATTERNS = [[m
+             re.IGNORECASE,[m
+         ),[m
+         re.compile([m
+[31m-            r"(?:at\s+most|maximum|max|no\s+more\s+than|below|under)\s+([\d.]+)\s*mbps",[m
+[32m+[m[32m            r"(?:at\s+most|maximum|max|no\s+more\s+than)\s+([\d.]+)\s*mbps",[m
+             re.IGNORECASE,[m
+         ),[m
+         re.compile(r"(?:maximize|highest)\s+(?:the\s+)?bandwidth", re.IGNORECASE),[m
+[36m@@ -91,7 +96,7 @@[m [m_METRIC_PATTERNS = [[m
+             re.IGNORECASE,[m
+         ),[m
+         re.compile([m
+[31m-            r"(?:at\s+most|maximum|max|no\s+more\s+than|below|under)\s+([\d.]+)\s*ms",[m
+[32m+[m[32m            r"(?:at\s+most|maximum|max|no\s+more\s+than)\s+([\d.]+)\s*ms",[m
+             re.IGNORECASE,[m
+         ),[m
+         re.compile(r"(?:maximize|highest)\s+(?:the\s+)?latency", re.IGNORECASE),[m
+[36m@@ -109,7 +114,7 @@[m [m_METRIC_PATTERNS = [[m
+             re.IGNORECASE,[m
+         ),[m
+         re.compile([m
+[31m-            r"(?:at\s+most|maximum|max|no\s+more\s+than|below|under)\s+([\d.]+)\s*ms\s+jitter",[m
+[32m+[m[32m            r"(?:at\s+most|maximum|max|no\s+more\s+than)\s+([\d.]+)\s*ms\s+jitter",[m
+             re.IGNORECASE,[m
+         ),[m
+         re.compile(r"maximize\s+(?:the\s+)?jitter", re.IGNORECASE),[m
+[36m@@ -127,7 +132,7 @@[m [m_METRIC_PATTERNS = [[m
+             re.IGNORECASE,[m
+         ),[m
+         re.compile([m
+[31m-            r"(?:at\s+most|maximum|max|no\s+more\s+than|below|under)\s+([\d.]+)\s*%\s+packet\s+loss",[m
+[32m+[m[32m            r"(?:at\s+most|maximum|max|no\s+more\s+than)\s+([\d.]+)\s*%\s+packet\s+loss",[m
+             re.IGNORECASE,[m
+         ),[m
+         re.compile(r"maximize\s+(?:the\s+)?packet\s+loss", re.IGNORECASE),[m
+[36m@@ -145,7 +150,7 @@[m [m_METRIC_PATTERNS = [[m
+             re.IGNORECASE,[m
+         ),[m
+         re.compile([m
+[31m-            r"(?:at\s+most|maximum|max|no\s+more\s+than|below|under)\s+([\d.]+)\s*%\s+availability",[m
+[32m+[m[32m            r"(?:at\s+most|maximum|max|no\s+more\s+than)\s+([\d.]+)\s*%\s+availability",[m
+             re.IGNORECASE,[m
+         ),[m
+         re.compile(r"maximize\s+(?:the\s+)?availability", re.IGNORECASE),[m
+[36m@@ -293,15 +298,16 @@[m [mclass MockLLM(LLMProvider):[m
+             "below": Comparison.LT,[m
+             "under": Comparison.LT,[m
+             "less than": Comparison.LT,[m
+[32m+[m[32m            "less than or equal to": Comparison.LTE,[m
+             "greater than": Comparison.GT,[m
+[31m-            "below": Comparison.LT,[m
+[31m-            "under": Comparison.LT,[m
+[32m+[m[32m            "greater than or equal to": Comparison.GTE,[m
+             "at most": Comparison.LTE,[m
+             "no more than": Comparison.LTE,[m
+             "above": Comparison.GT,[m
+             "over": Comparison.GT,[m
+             "more than": Comparison.GT,[m
+             "at least": Comparison.GTE,[m
+[32m+[m[32m            "no less than": Comparison.GTE,[m
+             "minimum": Comparison.GTE,[m
+             "or more": Comparison.GTE,[m
+             "or higher": Comparison.GTE,[m
+[36m@@ -333,7 +339,13 @@[m [mclass MockLLM(LLMProvider):[m
+             metric_name = re.sub(r"[\s_-]+", " ", match.group("metric").lower())[m
+             metric = metric_map[metric_name][m
+             unit_value = match.group("unit")[m
+[31m-            if unit_value and unit_value.lower() != unit_map[metric].value.lower():[m
+[32m+[m[32m            if ([m
+[32m+[m[32m                unit_value[m
+[32m+[m[32m                and unit_value.lower() not in {[m
+[32m+[m[32m                    unit_map[metric].value.lower(),[m
+[32m+[m[32m                    "percent" if metric == Metric.PACKET_LOSS else "",[m
+[32m+[m[32m                }[m
+[32m+[m[32m            ):[m
+                 continue[m
+             metrics.append([m
+                 MetricConstraint([m
+[36m@@ -348,7 +360,14 @@[m [mclass MockLLM(LLMProvider):[m
+             explicit_metrics.add(metric)[m
+ [m
+         for match in _REVERSE_BANDWIDTH_RE.finditer(text):[m
+[31m-            comparison = comparison_map[match.group("comparison").lower()][m
+[32m+[m[32m            if Metric.BANDWIDTH in explicit_metrics:[m
+[32m+[m[32m                continue[m
+[32m+[m[32m            comparison_text = ([m
+[32m+[m[32m                match.group("comparison") or match.group("suffix_comparison")[m
+[32m+[m[32m            )[m
+[32m+[m[32m            if comparison_text is None:[m
+[32m+[m[32m                continue[m
+[32m+[m[32m            comparison = comparison_map[comparison_text.lower()][m
+             metrics.append([m
+                 MetricConstraint([m
+                     metric=Metric.BANDWIDTH,[m
+[36m@@ -470,7 +489,8 @@[m [mclass MockLLM(LLMProvider):[m
+                 Metric.PACKET_LOSS,[m
+                 MetricUnit.PERCENT,[m
+                 Operator.MINIMIZE,[m
+[31m-                r"\b(?:minimi[sz]e|lowest|least)\b.{0,45}\bpacket[\s_-]+loss\b",[m
+[32m+[m[32m                r"\b(?:minimi[sz]e|lowest|least)\s+(?:the\s+)?"[m
+[32m+[m[32m                r"packet[\s_-]+loss\b",[m
+             ),[m
+         )[m
+         for metric, unit, direction, pattern in patterns:[m
+[1mdiff --git a/backend/llm/prompt.py b/backend/llm/prompt.py[m
+[1mindex eb797a5..ff41a24 100644[m
+[1m--- a/backend/llm/prompt.py[m
+[1m+++ b/backend/llm/prompt.py[m
+[36m@@ -58,6 +58,10 @@[m [mFor new generalized requests, preserve the exact comparison operator:[m
+ - "<=" -> comparison = LTE[m
+ - ">" -> comparison = GT[m
+ - ">=" -> comparison = GTE[m
+[32m+[m[32m- "below", "less than", or "under" -> comparison = LT[m
+[32m+[m[32m- "at most", "no more than", or "less than or equal to" -> comparison = LTE[m
+[32m+[m[32m- "above", "greater than", "more than", or "over" -> comparison = GT[m
+[32m+[m[32m- "at least", "no less than", or "greater than or equal to" -> comparison = GTE[m
+ - "exactly" -> comparison = EQ[m
+ - "between X and Y" -> comparison = BETWEEN, with inclusive lower_bound[m
+   and upper_bound[m
+[36m@@ -71,12 +75,23 @@[m [mExamples:[m
+ - "latency < 50 ms" -> metric LATENCY, comparison LT, value 50[m
+ - "bandwidth >= 20 Mbps" -> metric BANDWIDTH, comparison GTE, value 20[m
+ - "packet_loss <= 1%" -> metric PACKET_LOSS, comparison LTE, value 1[m
+[32m+[m[32m- "packet loss below 1 percent" -> metric PACKET_LOSS, comparison LT,[m
+[32m+[m[32m  value 1[m
+[32m+[m[32m- "packet loss at most 1 percent" -> metric PACKET_LOSS, comparison LTE,[m
+[32m+[m[32m  value 1[m
+[32m+[m[32m- "bandwidth more than 20 Mbps" -> metric BANDWIDTH, comparison GT,[m
+[32m+[m[32m  value 20[m
+[32m+[m[32m- "bandwidth at least 20 Mbps" -> metric BANDWIDTH, comparison GTE,[m
+[32m+[m[32m  value 20[m
+ - "latency between 5 and 50 ms" -> comparison BETWEEN, lower_bound 5,[m
+   upper_bound 50[m
+ [m
+[31m-The legacy min_value/max_value representation remains accepted for[m
+[31m-backwards compatibility, but it cannot encode strict comparisons. Use the[m
+[31m-explicit comparison representation for generalized requests.[m
+[32m+[m[32mFor natural-language requests, always use the explicit comparison[m
+[32m+[m[32mrepresentation, including for "below", "under", "at most", and "no more[m
+[32m+[m[32mthan". Do not encode natural-language comparisons using legacy min_value or[m
+[32m+[m[32mmax_value fields: those fields cannot preserve strictness. The legacy fields[m
+[32m+[m[32mremain accepted only for backwards compatibility with existing structured[m
+[32m+[m[32mintents.[m
+ [m
+ Use optimization independently from hard constraints when the user requests it.[m
+ One objective may coexist with any number of hard constraints. For example:[m
+[36m@@ -114,11 +129,11 @@[m [mRULES:[m
+   endpoints, preserve them so the backend can reject a mismatch.[m
+ - Do not invent hosts, switches, links, paths or topology.[m
+ - Do not invent numeric thresholds.[m
+[31m-- Interpret the explicit "<" operator and "less than" as strict LT.[m
+[31m-- Preserve the legacy min_value/max_value interpretation for "below",[m
+[31m-  "under", "at most", and "no more than".[m
+[32m+[m[32m- Interpret "below", "less than", and "under" as strict LT.[m
+[32m+[m[32m- Interpret "at most", "no more than", and "less than or equal to" as LTE.[m
+ - Interpret "above", "over", "more than", and "greater than" as strict GT.[m
+[31m-- Interpret "at least" and "minimum" as GTE.[m
+[32m+[m[32m- Interpret "at least", "no less than", "greater than or equal to", and[m
+[32m+[m[32m  "minimum" as GTE.[m
+ - Use optimization only when the user requests optimization.[m
+ - Use the correct unit for every metric.[m
+ - Multiple metrics may be present in one request.[m
+[1mdiff --git a/backend/planner/topology_planning.py b/backend/planner/topology_planning.py[m
+[1mindex 363bfbe..9fb55fd 100644[m
+[1m--- a/backend/planner/topology_planning.py[m
+[1m+++ b/backend/planner/topology_planning.py[m
+[36m@@ -91,19 +91,34 @@[m [mdef plan_on_topology([m
+                     "eligible path; objective ranking was not performed."[m
+                 )[m
+             else:[m
+[31m-                reverse = optimization.direction.value == "MAXIMIZE"[m
+[32m+[m[32m                maximize = optimization.direction.value == "MAXIMIZE"[m
+                 selected = sorted([m
+                     eligible,[m
+                     key=lambda item: ([m
+[31m-                        item["configured_metrics"][objective_key],[m
+[32m+[m[32m                        -item["configured_metrics"][objective_key][m
+[32m+[m[32m                        if maximize[m
+[32m+[m[32m                        else item["configured_metrics"][objective_key],[m
+                         item["candidate_id"],[m
+                     ),[m
+[31m-                    reverse=reverse,[m
+                 )[0][m
+[32m+[m[32m                best_value = selected["configured_metrics"][objective_key][m
+[32m+[m[32m                tied_best = [[m
+[32m+[m[32m                    item[m
+[32m+[m[32m                    for item in eligible[m
+[32m+[m[32m                    if item["configured_metrics"][objective_key] == best_value[m
+[32m+[m[32m                ][m
+                 selection_reason = ([m
+                     f"Ranked eligible candidates by configured "[m
+                     f"{optimization.metric} ({optimization.direction.value.lower()})."[m
+                 )[m
+[32m+[m[32m                if len(tied_best) > 1:[m
+[32m+[m[32m                    selection_reason += ([m
+[32m+[m[32m                        f" {len(tied_best)} candidates tie for the best configured "[m
+[32m+[m[32m                        f"{optimization.metric} value ({best_value} "[m
+[32m+[m[32m                        f"{optimization.unit}); the selected path is the "[m
+[32m+[m[32m                        "deterministic candidate-fingerprint tie-break. No "[m
+[32m+[m[32m                        f"difference in {optimization.metric} is claimed."[m
+[32m+[m[32m                    )[m
+                 if len(eligible) == 1:[m
+                     selection_reason += ([m
+                         " Only one candidate satisfied all known hard constraints; "[m
+[1mdiff --git a/frontend/src/components/intents/intent-page.tsx b/frontend/src/components/intents/intent-page.tsx[m
+[1mindex f0ad356..b0ac79e 100644[m
+[1m--- a/frontend/src/components/intents/intent-page.tsx[m
+[1m+++ b/frontend/src/components/intents/intent-page.tsx[m
+[36m@@ -77,22 +77,22 @@[m [mexport function IntentPage() {[m
+   const sourceRef = useRef(source);[m
+   const destinationRef = useRef(destination);[m
+   const preview = useMemo(() => localIntentPreview(text, source, destination), [text, source, destination]);[m
+[31m-  const capabilityLabel = serverPreview?.capability_resolution.eligibility === "CAPABILITY_READY"[m
+[31m-    ? "Capability ready"[m
+[31m-    : serverPreview?.capability_resolution.eligibility === "CONDITIONAL"[m
+[31m-      ? "Capability conditional"[m
+[31m-      : serverPreview[m
+[31m-        ? "Capability blocked"[m
+[31m-        : null;[m
+[31m-  const planningLabel = serverPreview?.planning_result[m
+[31m-    ? {[m
+[31m-        SELECTED: "Candidate selected",[m
+[31m-        NO_PATH: "No path",[m
+[31m-        NO_ELIGIBLE_PATH: "No eligible candidate",[m
+[31m-        INSUFFICIENT_CONFIGURED_DATA: "Feasibility unknown",[m
+[31m-        INCOMPLETE_SEARCH: "Search incomplete",[m
+[31m-      }[serverPreview.planning_result.status][m
+[32m+[m[32m  const capabilityLabel = serverPreview[m
+[32m+[m[32m    ? `Capabilities ${serverPreview.capability_resolution.eligibility === "CAPABILITY_READY"[m
+[32m+[m[32m      ? "ready"[m
+[32m+[m[32m      : serverPreview.capability_resolution.eligibility === "CONDITIONAL"[m
+[32m+[m[32m        ? "conditional"[m
+[32m+[m[32m        : "not ready"}`[m
+     : null;[m
+[32m+[m[32m  const planningLabel = serverPreview?.planning_eligible === true[m
+[32m+[m[32m    ? "Eligible candidate selected"[m
+[32m+[m[32m    : serverPreview?.planning_eligible === false[m
+[32m+[m[32m      ? serverPreview.planning_result?.status === "NO_PATH"[m
+[32m+[m[32m        ? "Planning ineligible · no path"[m
+[32m+[m[32m        : "Planning ineligible · no eligible candidate"[m
+[32m+[m[32m      : serverPreview?.planning_result[m
+[32m+[m[32m        ? "Planning result inconclusive"[m
+[32m+[m[32m        : "Planning not assessed";[m
+ [m
+   useEffect(() => {[m
+     sourceRef.current = source;[m
+[36m@@ -285,11 +285,11 @@[m [mexport function IntentPage() {[m
+           {API_BASE_URL ? serverPreview ? ([m
+             <div className="parsed-content">[m
+               <div className="parsed-status parsed-status-group">[m
+[31m-                <StatusPill tone="positive">Intent understood</StatusPill>[m
+[32m+[m[32m                <StatusPill tone="positive">Intent valid</StatusPill>[m
+                 {capabilityLabel && <StatusPill tone={serverPreview.capability_resolution.eligibility === "CAPABILITY_READY" ? "positive" : serverPreview.capability_resolution.eligibility === "CONDITIONAL" ? "warning" : "negative"}>{capabilityLabel}</StatusPill>}[m
+[31m-                {planningLabel && <StatusPill tone={serverPreview.planning_result?.status === "SELECTED" ? "positive" : serverPreview.planning_result?.status === "NO_ELIGIBLE_PATH" || serverPreview.planning_result?.status === "NO_PATH" ? "negative" : "warning"}>{planningLabel}</StatusPill>}[m
+[31m-                <StatusPill tone={serverPreview.execution_eligible ? "positive" : serverPreview.topology_identity?.mode === "DESIGN" ? "neutral" : "warning"}>[m
+[31m-                  {serverPreview.execution_eligible ? "Execution eligible" : serverPreview.topology_identity?.mode === "DESIGN" ? "DESIGN planning only" : "Not executable"}[m
+[32m+[m[32m                {planningLabel && <StatusPill tone={serverPreview.planning_eligible === true ? "positive" : serverPreview.planning_eligible === false ? "negative" : "warning"}>Planning: {planningLabel}</StatusPill>}[m
+[32m+[m[32m                <StatusPill tone={serverPreview.execution_status === "AVAILABLE" ? "positive" : "neutral"}>[m
+[32m+[m[32m                  {serverPreview.execution_status === "AVAILABLE" ? "Execution available" : serverPreview.topology_identity?.mode === "DESIGN" ? "Execution unavailable · DESIGN topology" : "Execution unavailable"}[m
+                 </StatusPill>[m
+                 <span>{serverPreview.parser_kind === "MOCK" ? "Deterministic mock parser · limited language coverage" : `${serverPreview.parser_kind} · ${serverPreview.parser}`}</span>[m
+               </div>[m
+[36m@@ -342,7 +342,7 @@[m [mexport function IntentPage() {[m
+                 </details>}[m
+               </div>}[m
+             </div>[m
+[31m-          ) : previewError ? <div className="preview-unsupported" role="alert"><CircleHelp size={20} /><strong>{previewError.startsWith("Clarification required:") ? "Clarification needed" : "Backend preview failed"}</strong><span>{previewError} Demo interpretation is intentionally not substituted for the unavailable backend response.</span></div> : ([m
+[32m+[m[32m          ) : previewError ? <div className="preview-unsupported" role="alert"><CircleHelp size={20} /><strong>{previewError.startsWith("Clarification required:") ? "Intent interpretation · Clarification required" : "Backend preview failed"}</strong><span>{previewError} No planning result is generated until the intent is clarified. Demo interpretation is intentionally not substituted for the unavailable backend response.</span></div> : ([m
+             <div className="preview-empty"><div className="preview-empty-icon"><FileJson2 size={21} /></div><strong>{text.trim() ? "Preview is waiting for backend validation" : "Your parsed intent will appear here"}</strong><span>Submit an intent to request parsing and capability resolution from the configured backend.</span><div className="preview-empty-flow"><span>Intent</span><ArrowRight size={12} /><span>Backend preview</span></div></div>[m
+           ) : text.trim() ? preview.supported ? ([m
+             <div className="parsed-content">[m
+[1mdiff --git a/frontend/src/types/api.ts b/frontend/src/types/api.ts[m
+[1mindex 9fd1365..98eb60b 100644[m
+[1m--- a/frontend/src/types/api.ts[m
+[1m+++ b/frontend/src/types/api.ts[m
+[36m@@ -51,12 +51,16 @@[m [mexport interface IntentPreviewResponse {[m
+   preview_id: string;[m
+   parser: string;[m
+   parser_kind: "PROVIDER" | "MOCK" | "STRUCTURED";[m
+[32m+[m[32m  interpretation_status: "VALID";[m
+   canonical_intent: CanonicalIntent;[m
+   capability_resolution: {[m
+     eligibility: "CAPABILITY_READY" | "CONDITIONAL" | "INELIGIBLE";[m
+     reasons: string[];[m
+     [key: string]: unknown;[m
+   };[m
+[32m+[m[32m  planning_eligible: boolean | null;[m
+[32m+[m[32m  execution_status: "AVAILABLE" | "UNAVAILABLE";[m
+[32m+[m[32m  execution_unavailable_reason: string | null;[m
+   execution_eligible: boolean;[m
+   topology_status: ApiAvailability;[m
+   topology_identity: TopologyIdentity | null;[m
+[1mdiff --git a/tests/data/mock_intent_cases.json b/tests/data/mock_intent_cases.json[m
+[1mindex 78cdc26..c5e4a80 100644[m
+[1m--- a/tests/data/mock_intent_cases.json[m
+[1m+++ b/tests/data/mock_intent_cases.json[m
+[36m@@ -15,6 +15,30 @@[m
+     "constraints": [["bandwidth", "GTE", 20.0]],[m
+     "optimization": null[m
+   },[m
+[32m+[m[32m  {[m
+[32m+[m[32m    "name": "strict packet loss upper bound",[m
+[32m+[m[32m    "prompt": "Find a path from h1 to h4 with packet loss below 1 percent.",[m
+[32m+[m[32m    "source": "h1",[m
+[32m+[m[32m    "destination": "h4",[m
+[32m+[m[32m    "constraints": [["packet_loss", "LT", 1.0]],[m
+[32m+[m[32m    "optimization": null[m
+[32m+[m[32m  },[m
+[32m+[m[32m  {[m
+[32m+[m[32m    "name": "inclusive packet loss upper bound",[m
+[32m+[m[32m    "prompt": "Find a path from h1 to h4 with packet loss at most 1 percent.",[m
+[32m+[m[32m    "source": "h1",[m
+[32m+[m[32m    "destination": "h4",[m
+[32m+[m[32m    "constraints": [["packet_loss", "LTE", 1.0]],[m
+[32m+[m[32m    "optimization": null[m
+[32m+[m[32m  },[m
+[32m+[m[32m  {[m
+[32m+[m[32m    "name": "strict bandwidth lower bound paraphrase",[m
+[32m+[m[32m    "prompt": "Find a path from h1 to h4 with bandwidth more than 20 Mbps.",[m
+[32m+[m[32m    "source": "h1",[m
+[32m+[m[32m    "destination": "h4",[m
+[32m+[m[32m    "constraints": [["bandwidth", "GT", 20.0]],[m
+[32m+[m[32m    "optimization": null[m
+[32m+[m[32m  },[m
+   {[m
+     "name": "strict latency upper bound",[m
+     "prompt": "Find a path from h1 to h4 with latency below 50 ms.",[m
+[36m@@ -55,6 +79,17 @@[m
+     "constraints": [["bandwidth", "GT", 20.0]],[m
+     "optimization": ["latency", "MINIMIZE"][m
+   },[m
+[32m+[m[32m  {[m
+[32m+[m[32m    "name": "combined bandwidth and packet loss constraints with latency objective",[m
+[32m+[m[32m    "prompt": "Find a route from h1 to h4 that has at least 20 Mbps bandwidth and keeps packet loss below 1 percent, preferably with the lowest latency.",[m
+[32m+[m[32m    "source": "h1",[m
+[32m+[m[32m    "destination": "h4",[m
+[32m+[m[32m    "constraints": [[m
+[32m+[m[32m      ["packet_loss", "LT", 1.0],[m
+[32m+[m[32m      ["bandwidth", "GTE", 20.0][m
+[32m+[m[32m    ],[m
+[32m+[m[32m    "optimization": ["latency", "MINIMIZE"][m
+[32m+[m[32m  },[m
+   {[m
+     "name": "simultaneous hard constraints",[m
+     "prompt": "Find a path from h1 to h4 with bandwidth at least 20 Mbps and latency below 50 ms.",[m
+[1mdiff --git a/tests/test_generalized_intent.py b/tests/test_generalized_intent.py[m
+[1mindex 57439fd..5cf9334 100644[m
+[1m--- a/tests/test_generalized_intent.py[m
+[1m+++ b/tests/test_generalized_intent.py[m
+[36m@@ -351,7 +351,8 @@[m [mdef test_mock_extracts_minimum_bandwidth(mock_llm):[m
+     constraint = intent.constraints.metrics[0][m
+ [m
+     assert constraint.metric == Metric.BANDWIDTH[m
+[31m-    assert constraint.min_value == 10[m
+[32m+[m[32m    assert constraint.comparison == Comparison.GTE[m
+[32m+[m[32m    assert constraint.value == 10[m
+ [m
+ [m
+ def test_mock_extracts_maximum_latency(mock_llm):[m
+[1mdiff --git a/tests/test_groq_provider.py b/tests/test_groq_provider.py[m
+[1mindex ce95af1..e62a129 100644[m
+[1m--- a/tests/test_groq_provider.py[m
+[1m+++ b/tests/test_groq_provider.py[m
+[36m@@ -10,6 +10,7 @@[m [mfrom backend.llm.base import ([m
+     LLMProviderUnavailableError,[m
+ )[m
+ from backend.llm.groq_provider import DEFAULT_MODEL, GROQ_BASE_URL, GroqLLM[m
+[32m+[m[32mfrom backend.llm.prompt import SYSTEM_PROMPT[m
+ from backend.models.canonical_intent import Comparison[m
+ from backend.models.intent import ([m
+     Objective,[m
+[36m@@ -137,31 +138,123 @@[m [mdef test_groq_mixed_legacy_objective_and_generalized_constraint_normalize():[m
+                         {[m
+                             "metric": "BANDWIDTH",[m
+                             "unit": "Mbps",[m
+[31m-                            "comparison": "GT",[m
+[32m+[m[32m                            "comparison": "GTE",[m
+                             "value": 20,[m
+                             "lower_bound": None,[m
+                             "upper_bound": None,[m
+                             "min_value": None,[m
+                             "max_value": None,[m
+                             "optimization": None,[m
+[31m-                        }[m
+[32m+[m[32m                        },[m
+[32m+[m[32m                        {[m
+[32m+[m[32m                            "metric": "PACKET_LOSS",[m
+[32m+[m[32m                            "unit": "%",[m
+[32m+[m[32m                            "comparison": "LT",[m
+[32m+[m[32m                            "value": 1,[m
+[32m+[m[32m                        },[m
+                     ],[m
+                 },[m
+             }[m
+         )[m
+     )[m
+     parsed = GroqLLM(api_key="test-key", client=client).parse_intent([m
+[31m-        "Minimize latency between h1 and h4 while maintaining bandwidth above 20 Mbps."[m
+[32m+[m[32m        "Find a route from h1 to h4 that has at least 20 Mbps bandwidth "[m
+[32m+[m[32m        "and keeps packet loss below 1 percent, preferably with the lowest latency."[m
+     )[m
+ [m
+     canonical = normalize_intent(parsed).canonical[m
+     assert parsed.objective == Objective.MINIMIZE_LATENCY[m
+     assert canonical.optimization.metric == "latency"[m
+     assert canonical.optimization.direction.value == "MINIMIZE"[m
+[31m-    assert len(canonical.constraints) == 1[m
+[31m-    assert canonical.constraints[0].metric == "bandwidth"[m
+[31m-    assert canonical.constraints[0].comparison == Comparison.GT[m
+[31m-    assert canonical.constraints[0].value == 20[m
+[32m+[m[32m    assert [[m
+[32m+[m[32m        (item.metric, item.comparison, item.value)[m
+[32m+[m[32m        for item in canonical.constraints[m
+[32m+[m[32m    ] == [[m
+[32m+[m[32m        ("bandwidth", Comparison.GTE, 20),[m
+[32m+[m[32m        ("packet_loss", Comparison.LT, 1),[m
+[32m+[m[32m    ][m
+[32m+[m
+[32m+[m
+[32m+[m[32m@pytest.mark.parametrize([m
+[32m+[m[32m    ("prompt", "metric", "unit", "comparison", "value"),[m
+[32m+[m[32m    [[m
+[32m+[m[32m        ([m
+[32m+[m[32m            "Find a path from h1 to h4 with packet loss below 1 percent.",[m
+[32m+[m[32m            "PACKET_LOSS",[m
+[32m+[m[32m            "%",[m
+[32m+[m[32m            "LT",[m
+[32m+[m[32m            1,[m
+[32m+[m[32m        ),[m
+[32m+[m[32m        ([m
+[32m+[m[32m            "Find a path from h1 to h4 with packet loss at most 1 percent.",[m
+[32m+[m[32m            "PACKET_LOSS",[m
+[32m+[m[32m            "%",[m
+[32m+[m[32m            "LTE",[m
+[32m+[m[32m            1,[m
+[32m+[m[32m        ),[m
+[32m+[m[32m        ([m
+[32m+[m[32m            "Find a path from h1 to h4 with bandwidth more than 20 Mbps.",[m
+[32m+[m[32m            "BANDWIDTH",[m
+[32m+[m[32m            "Mbps",[m
+[32m+[m[32m            "GT",[m
+[32m+[m[32m            20,[m
+[32m+[m[32m        ),[m
+[32m+[m[32m        ([m
+[32m+[m[32m            "Find a path from h1 to h4 with bandwidth at least 20 Mbps.",[m
+[32m+[m[32m            "BANDWIDTH",[m
+[32m+[m[32m            "Mbps",[m
+[32m+[m[32m            "GTE",[m
+[32m+[m[32m            20,[m
+[32m+[m[32m        ),[m
+[32m+[m[32m    ],[m
+[32m+[m[32m)[m
+[32m+[m[32mdef test_groq_explicit_comparisons_survive_canonical_normalization([m
+[32m+[m[32m    prompt,[m
+[32m+[m[32m    metric,[m
+[32m+[m[32m    unit,[m
+[32m+[m[32m    comparison,[m
+[32m+[m[32m    value,[m
+[32m+[m[32m):[m
+[32m+[m[32m    client = Mock()[m
+[32m+[m[32m    client.chat.completions.create.return_value = _completion([m
+[32m+[m[32m        json.dumps([m
+[32m+[m[32m            {[m
+[32m+[m[32m                "objective": None,[m
+[32m+[m[32m                "source": "h1",[m
+[32m+[m[32m                "destination": "h4",[m
+[32m+[m[32m                "traffic_selector": None,[m
+[32m+[m[32m                "target": None,[m
+[32m+[m[32m                "constraints": {[m
+[32m+[m[32m                    "loss_tolerance": None,[m
+[32m+[m[32m                    "metrics": [[m
+[32m+[m[32m                        {[m
+[32m+[m[32m                            "metric": metric,[m
+[32m+[m[32m                            "unit": unit,[m
+[32m+[m[32m                            "comparison": comparison,[m
+[32m+[m[32m                            "value": value,[m
+[32m+[m[32m                        }[m
+[32m+[m[32m                    ],[m
+[32m+[m[32m                },[m
+[32m+[m[32m            }[m
+[32m+[m[32m        )[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    parsed = GroqLLM(api_key="test-key", client=client).parse_intent(prompt)[m
+[32m+[m[32m    canonical = normalize_intent(parsed).canonical[m
+[32m+[m
+[32m+[m[32m    assert canonical.constraints[0].metric == metric.lower()[m
+[32m+[m[32m    assert canonical.constraints[0].comparison == Comparison(comparison)[m
+[32m+[m[32m    assert canonical.constraints[0].value == value[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef test_shared_prompt_defines_strict_and_inclusive_language():[m
+[32m+[m[32m    for instruction in ([m
+[32m+[m[32m        '"below", "less than", or "under" -> comparison = LT',[m
+[32m+[m[32m        '"at most", "no more than", or "less than or equal to" -> comparison = LTE',[m
+[32m+[m[32m        '"above", "greater than", "more than", or "over" -> comparison = GT',[m
+[32m+[m[32m        '"at least", "no less than", or "greater than or equal to" -> comparison = GTE',[m
+[32m+[m[32m    ):[m
+[32m+[m[32m        assert instruction in SYSTEM_PROMPT[m
+ [m
+ [m
+ @pytest.mark.parametrize("status_code", [429, 503])[m
+[1mdiff --git a/tests/test_llm_mock.py b/tests/test_llm_mock.py[m
+[1mindex 90cb01a..cb40200 100644[m
+[1m--- a/tests/test_llm_mock.py[m
+[1m+++ b/tests/test_llm_mock.py[m
+[36m@@ -69,6 +69,14 @@[m [mdef test_unsupported_phrasing_raises_llm_parse_error():[m
+         ("latency below 50 ms between h1 and h4", "latency", Comparison.LT, 50),[m
+         ("latency at most 50 ms between h1 and h4", "latency", Comparison.LTE, 50),[m
+         ("bandwidth at least 20 Mbps between h1 and h4", "bandwidth", Comparison.GTE, 20),[m
+[32m+[m[32m        ("packet loss less than or equal to 1 percent between h1 and h4", "packet_loss", Comparison.LTE, 1),[m
+[32m+[m[32m        ("bandwidth no less than 20 Mbps between h1 and h4", "bandwidth", Comparison.GTE, 20),[m
+[32m+[m[32m        ("latency under 50 ms between h1 and h4", "latency", Comparison.LT, 50),[m
+[32m+[m[32m        ("bandwidth over 20 Mbps between h1 and h4", "bandwidth", Comparison.GT, 20),[m
+[32m+[m[32m        ("packet loss below 1 percent between h1 and h4", "packet_loss", Comparison.LT, 1),[m
+[32m+[m[32m        ("packet loss at most 1 percent between h1 and h4", "packet_loss", Comparison.LTE, 1),[m
+[32m+[m[32m        ("bandwidth more than 20 Mbps between h1 and h4", "bandwidth", Comparison.GT, 20),[m
+[32m+[m[32m        ("bandwidth at least 20 Mbps between h1 and h4", "bandwidth", Comparison.GTE, 20),[m
+     ],[m
+ )[m
+ def test_mock_preserves_strict_and_inclusive_comparisons([m
+[36m@@ -115,6 +123,26 @@[m [mdef test_mock_parses_reported_multiple_constraint_wording():[m
+     ][m
+ [m
+ [m
+[32m+[m[32mdef test_mock_parses_combined_bandwidth_loss_and_latency_objective():[m
+[32m+[m[32m    canonical = normalize_intent([m
+[32m+[m[32m        MockLLM().parse_intent([m
+[32m+[m[32m            "Find a route from h1 to h4 that has at least 20 Mbps bandwidth "[m
+[32m+[m[32m            "and keeps packet loss below 1 percent, preferably with the "[m
+[32m+[m[32m            "lowest latency."[m
+[32m+[m[32m        )[m
+[32m+[m[32m    ).canonical[m
+[32m+[m
+[32m+[m[32m    assert canonical.optimization.metric == "latency"[m
+[32m+[m[32m    assert canonical.optimization.direction.value == "MINIMIZE"[m
+[32m+[m[32m    assert [[m
+[32m+[m[32m        (item.metric, item.comparison, item.value)[m
+[32m+[m[32m        for item in canonical.constraints[m
+[32m+[m[32m    ] == [[m
+[32m+[m[32m        ("packet_loss", Comparison.LT, 1),[m
+[32m+[m[32m        ("bandwidth", Comparison.GTE, 20),[m
+[32m+[m[32m    ][m
+[32m+[m
+[32m+[m
+ @pytest.mark.parametrize([m
+     ("text", "expected_constraints", "expected_optimization"),[m
+     [[m
+[1mdiff --git a/tests/test_topology_catalog.py b/tests/test_topology_catalog.py[m
+[1mindex 6c13efb..53c9af7 100644[m
+[1m--- a/tests/test_topology_catalog.py[m
+[1m+++ b/tests/test_topology_catalog.py[m
+[36m@@ -202,6 +202,10 @@[m [mdef test_active_design_topology_drives_candidate_planning([m
+     assert body["topology_identity"]["version"] == 1[m
+     assert body["topology_identity"]["mode"] == "DESIGN"[m
+     assert result["topology_identity"] == body["topology_identity"][m
+[32m+[m[32m    assert body["interpretation_status"] == "VALID"[m
+[32m+[m[32m    assert body["planning_eligible"] is True[m
+[32m+[m[32m    assert body["execution_status"] == "UNAVAILABLE"[m
+[32m+[m[32m    assert "DESIGN" in body["execution_unavailable_reason"][m
+     assert body["execution_eligible"] is False[m
+     assert result["status"] == "SELECTED"[m
+     selected = next([m
+[36m@@ -213,6 +217,78 @@[m [mdef test_active_design_topology_drives_candidate_planning([m
+     assert "not achieved throughput" in result["provenance"][m
+ [m
+ [m
+[32m+[m[32mdef test_design_plan_reports_no_eligible_candidate_as_ineligible(api_client):[m
+[32m+[m[32m    client, _ = api_client[m
+[32m+[m[32m    _create_active(client)[m
+[32m+[m[32m    response = client.post([m
+[32m+[m[32m        "/api/v1/intents/preview",[m
+[32m+[m[32m        json={[m
+[32m+[m[32m            "natural_language": ([m
+[32m+[m[32m                "Find a path from h1 to h4 with bandwidth above 1000 Mbps."[m
+[32m+[m[32m            ),[m
+[32m+[m[32m            "source": "h1",[m
+[32m+[m[32m            "destination": "h4",[m
+[32m+[m[32m        },[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    assert response.status_code == 200, response.text[m
+[32m+[m[32m    body = response.json()[m
+[32m+[m[32m    assert body["interpretation_status"] == "VALID"[m
+[32m+[m[32m    assert body["planning_result"]["status"] == "NO_ELIGIBLE_PATH"[m
+[32m+[m[32m    assert body["planning_eligible"] is False[m
+[32m+[m[32m    assert body["execution_status"] == "UNAVAILABLE"[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef test_equal_configured_objective_values_explain_deterministic_tie(api_client):[m
+[32m+[m[32m    client, _ = api_client[m
+[32m+[m[32m    topology = _diamond_topology()[m
+[32m+[m[32m    for link in topology.graph.links:[m
+[32m+[m[32m        link.delay_ms = 0[m
+[32m+[m[32m    _create_active(client, topology)[m
+[32m+[m
+[32m+[m[32m    response = client.post([m
+[32m+[m[32m        "/api/v1/intents/preview",[m
+[32m+[m[32m        json={[m
+[32m+[m[32m            "natural_language": "Find the lowest-latency path from h1 to h4.",[m
+[32m+[m[32m            "source": "h1",[m
+[32m+[m[32m            "destination": "h4",[m
+[32m+[m[32m        },[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    assert response.status_code == 200, response.text[m
+[32m+[m[32m    result = response.json()["planning_result"][m
+[32m+[m[32m    assert result["status"] == "SELECTED"[m
+[32m+[m[32m    assert all([m
+[32m+[m[32m        candidate["configured_metrics"]["latency_ms"] == 0[m
+[32m+[m[32m        for candidate in result["candidates"][m
+[32m+[m[32m    )[m
+[32m+[m[32m    assert result["selected_candidate_id"] == min([m
+[32m+[m[32m        candidate["candidate_id"] for candidate in result["candidates"][m
+[32m+[m[32m    )[m
+[32m+[m[32m    assert "tie for the best configured latency value (0.0 ms)" in result[[m
+[32m+[m[32m        "selection_reason"[m
+[32m+[m[32m    ][m
+[32m+[m[32m    assert "No difference in latency is claimed." in result["selection_reason"][m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef test_clarification_response_has_no_fabricated_plan(api_client):[m
+[32m+[m[32m    client, _ = api_client[m
+[32m+[m[32m    _create_active(client)[m
+[32m+[m
+[32m+[m[32m    response = client.post([m
+[32m+[m[32m        "/api/v1/intents/preview",[m
+[32m+[m[32m        json={[m
+[32m+[m[32m            "natural_language": "Find a faster path.",[m
+[32m+[m[32m            "source": "h1",[m
+[32m+[m[32m            "destination": "h4",[m
+[32m+[m[32m        },[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    assert response.status_code == 422[m
+[32m+[m[32m    assert response.json()["detail"].startswith("Clarification required:")[m
+[32m+[m[32m    assert "planning_result" not in response.json()[m
+[32m+[m
+[32m+[m
+ def test_arbitrary_active_topology_supports_path_ranking_and_constraints(api_client):[m
+     client, _ = api_client[m
+     topology = TopologyDefinitionInput([m

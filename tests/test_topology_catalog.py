@@ -203,6 +203,7 @@ def test_active_design_topology_drives_candidate_planning(
     assert body["topology_identity"]["mode"] == "DESIGN"
     assert result["topology_identity"] == body["topology_identity"]
     assert body["interpretation_status"] == "VALID"
+    assert body["capability_resolution"]["eligibility"] == "CAPABILITY_READY"
     assert body["planning_eligible"] is True
     assert body["execution_status"] == "UNAVAILABLE"
     assert "DESIGN" in body["execution_unavailable_reason"]
@@ -237,6 +238,43 @@ def test_design_plan_reports_no_eligible_candidate_as_ineligible(api_client):
     assert body["planning_result"]["status"] == "NO_ELIGIBLE_PATH"
     assert body["planning_eligible"] is False
     assert body["execution_status"] == "UNAVAILABLE"
+
+
+def test_combined_design_preview_json_keeps_planning_and_execution_independent(api_client):
+    client, _ = api_client
+    _create_active(client)
+    response = client.post(
+        "/api/v1/intents/preview",
+        json={
+            "natural_language": (
+                "Find a route from h1 to h4 that has at least 20 Mbps bandwidth "
+                "and keeps packet loss below 1 percent, preferably with the "
+                "lowest latency."
+            ),
+            "source": "h1",
+            "destination": "h4",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert {
+        "interpretation_status": body["interpretation_status"],
+        "capability_eligibility": body["capability_resolution"]["eligibility"],
+        "planning_eligible": body["planning_eligible"],
+        "planning_status": body["planning_result"]["status"],
+        "execution_status": body["execution_status"],
+        "execution_eligible": body["execution_eligible"],
+        "topology_mode": body["topology_identity"]["mode"],
+    } == {
+        "interpretation_status": "VALID",
+        "capability_eligibility": "CAPABILITY_READY",
+        "planning_eligible": True,
+        "planning_status": "SELECTED",
+        "execution_status": "UNAVAILABLE",
+        "execution_eligible": False,
+        "topology_mode": "DESIGN",
+    }
 
 
 def test_equal_configured_objective_values_explain_deterministic_tie(api_client):

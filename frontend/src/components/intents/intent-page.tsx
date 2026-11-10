@@ -5,6 +5,7 @@ import { ArrowRight, Check, ChevronDown, CircleHelp, FileJson2, Send, Sparkles }
 import { DemoTag, Panel, SectionHeading, StatusPill } from "@/components/ui/dashboard-ui";
 import { Button } from "@/components/ui/button";
 import { API_BASE_URL, apiRequest } from "@/lib/api-client";
+import { deriveIntentPreviewStatuses } from "@/lib/intent-preview-status.mjs";
 import type {
   ActiveTopologyResponse,
   ExecutionAcceptedResponse,
@@ -77,22 +78,9 @@ export function IntentPage() {
   const sourceRef = useRef(source);
   const destinationRef = useRef(destination);
   const preview = useMemo(() => localIntentPreview(text, source, destination), [text, source, destination]);
-  const capabilityLabel = serverPreview
-    ? `Capabilities ${serverPreview.capability_resolution.eligibility === "CAPABILITY_READY"
-      ? "ready"
-      : serverPreview.capability_resolution.eligibility === "CONDITIONAL"
-        ? "conditional"
-        : "not ready"}`
-    : null;
-  const planningLabel = serverPreview?.planning_eligible === true
-    ? "Eligible candidate selected"
-    : serverPreview?.planning_eligible === false
-      ? serverPreview.planning_result?.status === "NO_PATH"
-        ? "Planning ineligible · no path"
-        : "Planning ineligible · no eligible candidate"
-      : serverPreview?.planning_result
-        ? "Planning result inconclusive"
-        : "Planning not assessed";
+  const previewStatuses = serverPreview
+    ? deriveIntentPreviewStatuses(serverPreview)
+    : [];
 
   useEffect(() => {
     sourceRef.current = source;
@@ -281,16 +269,11 @@ export function IntentPage() {
         </div>
 
         <Panel className="parsed-panel">
-          <div className="panel-title-row"><div className="parsed-title"><div className="parsed-icon"><FileJson2 size={17} /></div><div><h3>Structured preview</h3><p>{API_BASE_URL ? "Backend capability assessment" : "Local illustrative interpretation"}</p></div></div><span className="local-badge">{API_BASE_URL ? "API" : "LOCAL"}</span></div>
+          <div className="panel-title-row"><div className="parsed-title"><div className="parsed-icon"><FileJson2 size={17} /></div><div><h3>Structured preview</h3><p>{API_BASE_URL ? "Intent interpretation, planning and execution status" : "Local illustrative interpretation"}</p></div></div><span className="local-badge">{API_BASE_URL ? "API" : "LOCAL"}</span></div>
           {API_BASE_URL ? serverPreview ? (
             <div className="parsed-content">
               <div className="parsed-status parsed-status-group">
-                <StatusPill tone="positive">Intent valid</StatusPill>
-                {capabilityLabel && <StatusPill tone={serverPreview.capability_resolution.eligibility === "CAPABILITY_READY" ? "positive" : serverPreview.capability_resolution.eligibility === "CONDITIONAL" ? "warning" : "negative"}>{capabilityLabel}</StatusPill>}
-                {planningLabel && <StatusPill tone={serverPreview.planning_eligible === true ? "positive" : serverPreview.planning_eligible === false ? "negative" : "warning"}>Planning: {planningLabel}</StatusPill>}
-                <StatusPill tone={serverPreview.execution_status === "AVAILABLE" ? "positive" : "neutral"}>
-                  {serverPreview.execution_status === "AVAILABLE" ? "Execution available" : serverPreview.topology_identity?.mode === "DESIGN" ? "Execution unavailable · DESIGN topology" : "Execution unavailable"}
-                </StatusPill>
+                {previewStatuses.map((status) => <StatusPill key={status.label} tone={status.tone}>{status.label}</StatusPill>)}
                 <span>{serverPreview.parser_kind === "MOCK" ? "Deterministic mock parser · limited language coverage" : `${serverPreview.parser_kind} · ${serverPreview.parser}`}</span>
               </div>
               <div className="preview-route"><span className="endpoint-chip">{serverPreview.canonical_intent.scope.source}</span><ArrowRight size={14} /><span className="endpoint-chip">{serverPreview.canonical_intent.scope.destination}</span></div>
