@@ -11,8 +11,9 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Activity, ArrowDownRight, ArrowUpRight, Gauge, Radio, TrendingUp } from "lucide-react";
+import { Activity, ArrowDownRight, Gauge, Radio, TrendingUp } from "lucide-react";
 import { DemoTag, Panel } from "@/components/ui/dashboard-ui";
+import { useActiveTopology } from "@/hooks/use-active-topology";
 
 const latencyData = [
   { time: "14:00", value: 2.8 }, { time: "14:10", value: 2.3 }, { time: "14:20", value: 2.5 },
@@ -64,22 +65,46 @@ function MetricChart({ title, description, data, color, unit, icon: Icon, domain
 }
 
 export function MetricsPage() {
+  const topologyState = useActiveTopology();
+  const topology = topologyState.status === "loaded" ? topologyState.topology : null;
   return (
     <div className="page-stack">
-      <div className="demo-banner"><div className="demo-banner-icon"><Activity size={17} /></div><div><strong>Sample metric series</strong><span>These charts are illustrative only; they are not live measurements or a telemetry feed.</span></div><DemoTag /></div>
-      <div className="metrics-toolbar"><div className="metrics-scope"><span className="scope-dot" /> Demo diamond topology <span className="toolbar-sep">·</span> h1 → h4</div><div className="range-selector"><button>1h</button><button>6h</button><button className="range-active">24h</button><button>7d</button></div></div>
-      <div className="metrics-summary-grid">
-        <Panel className="metric-summary"><div className="metric-summary-icon summary-blue"><Gauge size={17} /></div><div><span>Average latency</span><strong>2.1 <small>ms</small></strong><em className="good-trend"><ArrowDownRight size={13} /> 14% lower</em></div><div className="metric-spark"><TrendingUp size={21} /></div></Panel>
-        <Panel className="metric-summary"><div className="metric-summary-icon summary-violet"><Radio size={17} /></div><div><span>Receiver throughput</span><strong>45.5 <small>Mbps</small></strong><em className="good-trend"><ArrowUpRight size={13} /> 8% higher</em></div><div className="metric-spark"><TrendingUp size={21} /></div></Panel>
-        <Panel className="metric-summary"><div className="metric-summary-icon summary-teal"><Activity size={17} /></div><div><span>Packet loss</span><strong>0.02 <small>%</small></strong><em className="good-trend"><ArrowDownRight size={13} /> 0.01% lower</em></div><div className="metric-spark"><TrendingUp size={21} /></div></Panel>
+      <div className="demo-banner"><div className="demo-banner-icon"><Activity size={17} /></div><div><strong>Live telemetry unavailable</strong><span>No telemetry endpoint is integrated. Charts below are illustrative sample data and must not be used as live network measurements.</span></div><DemoTag /></div>
+      <div className="metrics-toolbar">
+        <div className="metrics-scope"><span className="scope-dot" />
+          {topology
+            ? `${topology.name} · ${topology.mode} v${topology.version} · configured topology only`
+            : topologyState.status === "error"
+              ? `Active topology unavailable · ${topologyState.error}`
+              : topologyState.status === "demo"
+                ? "Backend not configured · active topology unavailable"
+                : "Loading active topology"}
+        </div>
+        <div className="range-selector" aria-label="Time range unavailable without timestamped telemetry">
+          {["1h", "6h", "24h", "7d"].map((range) => <button key={range} type="button" disabled title="Time-range filtering requires timestamped telemetry, which is not connected.">{range}</button>)}
+        </div>
       </div>
-      <div className="chart-grid">
+      <section className="metrics-live-section" aria-labelledby="live-metrics-heading">
+        <div className="metrics-section-heading"><div><h2 id="live-metrics-heading">Live telemetry</h2><p>Runtime measurements from connected network telemetry sources.</p></div><span className="metrics-unavailable-badge">NOT AVAILABLE</span></div>
+        <Panel className="metrics-unavailable">
+          <Activity size={18} />
+          <div><strong>Network measurements are unavailable</strong><span>Configured topology attributes are not measurements. No live RTT, receiver throughput, packet-loss series, or OVS interface counters are available.</span></div>
+        </Panel>
+        <div className="metrics-summary-grid">
+          <Panel className="metric-summary"><div className="metric-summary-icon summary-blue"><Gauge size={17} /></div><div><span>Average latency · live</span><strong>NOT AVAILABLE</strong><em>ICMP telemetry not connected</em></div></Panel>
+          <Panel className="metric-summary"><div className="metric-summary-icon summary-violet"><Radio size={17} /></div><div><span>Receiver throughput · live</span><strong>NOT AVAILABLE</strong><em>iperf3 telemetry not connected</em></div></Panel>
+          <Panel className="metric-summary"><div className="metric-summary-icon summary-teal"><Activity size={17} /></div><div><span>Packet loss · live</span><strong>NOT AVAILABLE</strong><em>Timestamped measurements not connected</em></div></Panel>
+        </div>
+      </section>
+      <section className="metrics-demo-section" aria-labelledby="demo-metrics-heading">
+        <div className="metrics-section-heading"><div><h2 id="demo-metrics-heading">Illustrative charts</h2><p>Sample series retained for layout demonstration; they do not represent this topology or live traffic.</p></div><DemoTag /></div>
+        <div className="chart-grid">
         <MetricChart title="Latency over time" description="Average round-trip time · ICMP" data={latencyData} color="var(--accent)" unit="ms" icon={Gauge} />
         <MetricChart title="Bandwidth over time" description="Measured receiver throughput · iperf3" data={bandwidthData} color="var(--periwinkle)" unit="Mbps" icon={Radio} />
         <MetricChart title="Packet loss over time" description="Lost packets as a share of sent packets" data={lossData} color="var(--amber)" unit="%" icon={Activity} domain={[0, 0.1]} />
         <Panel className="chart-panel throughput-chart-panel">
           <div className="chart-heading"><div><div className="chart-title"><span className="chart-icon"><TrendingUp size={15} /></span><h3>Network throughput</h3></div><p>Demo ingress and egress sample series</p></div><button className="chart-menu" aria-label="Throughput chart options">•••</button></div>
-          <div className="throughput-legend"><span><i className="throughput-dot blue-dot" /> Ingress</span><span><i className="throughput-dot purple-dot" /> Egress</span><span className="throughput-current">45.5 <small>Mbps</small></span></div>
+          <div className="throughput-legend"><span><i className="throughput-dot blue-dot" /> Demo ingress</span><span><i className="throughput-dot purple-dot" /> Demo egress</span><span className="throughput-current">SAMPLE DATA</span></div>
           <div className="chart-area">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={throughputData} margin={{ top: 10, right: 7, left: -20, bottom: 0 }}>
@@ -94,7 +119,8 @@ export function MetricsPage() {
           </div>
           <div className="chart-footer"><span>DEMO MEASUREMENT</span><span>Sample time window · 80 min</span></div>
         </Panel>
-      </div>
+        </div>
+      </section>
       <div className="metrics-disclaimer"><Activity size={14} /><span>Sample series are provided to demonstrate dashboard visualizations. Connect a real metrics API before using this page for operational decisions.</span></div>
     </div>
   );

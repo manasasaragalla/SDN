@@ -5,6 +5,7 @@ import { ArrowRight, Check, ChevronDown, CircleHelp, FileJson2, Send, Sparkles }
 import { DemoTag, Panel, SectionHeading, StatusPill } from "@/components/ui/dashboard-ui";
 import { Button } from "@/components/ui/button";
 import { API_BASE_URL, apiRequest } from "@/lib/api-client";
+import { clearPlanningPreview, savePlanningPreview } from "@/lib/planning-preview.mjs";
 import { deriveIntentPreviewStatuses } from "@/lib/intent-preview-status.mjs";
 import type {
   ActiveTopologyResponse,
@@ -68,6 +69,7 @@ export function IntentPage() {
   const [submitted, setSubmitted] = useState(false);
   const [serverPreview, setServerPreview] = useState<IntentPreviewResponse | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewStorageWarning, setPreviewStorageWarning] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [executionMessage, setExecutionMessage] = useState<string | null>(null);
   const [executing, setExecuting] = useState(false);
@@ -104,6 +106,7 @@ export function IntentPage() {
         if (previous && changed) {
           setSubmitted(false);
           setServerPreview(null);
+          clearPlanningPreview();
           setPreviewError(null);
           setExecutionMessage(null);
           setExecutionStarted(false);
@@ -142,6 +145,8 @@ export function IntentPage() {
   const resetPreview = () => {
     setSubmitted(false);
     setServerPreview(null);
+    clearPlanningPreview();
+    setPreviewStorageWarning(null);
     setPreviewError(null);
     setExecutionMessage(null);
     setExecutionStarted(false);
@@ -191,11 +196,13 @@ export function IntentPage() {
     event.preventDefault();
     setSubmitted(true);
     setServerPreview(null);
+    setPreviewStorageWarning(null);
     setPreviewError(null);
     setExecutionMessage(null);
     setExecutionStarted(false);
     setExecutionResult(null);
     statusPoll.current?.abort();
+    clearPlanningPreview();
     if (!API_BASE_URL) return;
 
     setSubmitting(true);
@@ -209,6 +216,9 @@ export function IntentPage() {
         }),
       });
       setServerPreview(result);
+      if (!savePlanningPreview(text, result)) {
+        setPreviewStorageWarning("This preview is available while this application tab remains open, but browser session storage is unavailable.");
+      }
     } catch (error) {
       setPreviewError(error instanceof Error ? error.message : "Intent preview failed.");
     } finally {
@@ -258,6 +268,7 @@ export function IntentPage() {
               {source === destination && <div className="inline-warning">Source and destination must be different hosts.</div>}
               {API_BASE_URL && !activeTopology && <div className="submit-notice notice-warning" role="status"><CircleHelp size={15} /><span>{topologyLoadError ?? "No active topology. Create or import a DESIGN topology in Network Topology, then activate it to populate these selectors."}</span></div>}
               {previewError && <div className="submit-notice notice-warning" role="alert"><CircleHelp size={15} /><span>Backend preview unavailable: {previewError}</span></div>}
+              {previewStorageWarning && <div className="submit-notice notice-warning" role="status"><CircleHelp size={15} /><span>{previewStorageWarning}</span></div>}
               {submitted && !API_BASE_URL && <div className={`submit-notice ${preview.supported ? "notice-info" : "notice-warning"}`}><CircleHelp size={15} /><span>{preview.supported ? "Local structured preview generated. It has not been validated by the backend and cannot be deployed." : "This local example cannot interpret the request. Backend capability and ambiguity checks are not available."}</span></div>}
             </form>
           </Panel>

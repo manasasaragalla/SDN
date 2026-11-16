@@ -54,7 +54,7 @@ function PageContent({ page, navigate }: { page: PageId; navigate: (id: PageId) 
     case "overview": return <OverviewPage navigate={navigate} />;
     case "topology": return <TopologyPage />;
     case "intents": return <IntentPage />;
-    case "planning": return <PlanningPage />;
+    case "planning": return <PlanningPage navigate={navigate} />;
     case "metrics": return <MetricsPage />;
     case "executions": return <ExecutionsPage />;
     case "settings": return <SettingsPage />;
@@ -155,7 +155,7 @@ export function AppShell() {
             <div className="page-intro-meta"><span className="environment-badge"><i /> DEMO ENVIRONMENT</span><span className="last-updated">Updated just now</span></div>
           </div>
           <PageContent page={activePage} navigate={navigate} />
-          <footer className="page-footer"><span>IntentFlow SDN <span className="footer-dot">·</span> Illustrative sample data</span><span>{connection.state === "demo" ? "Backend integration not configured" : connection.state === "connected" ? "Backend connected · dashboard sample data remains illustrative" : connection.state === "checking" ? "Checking backend connection" : "Backend disconnected · dashboard sample data remains illustrative"}</span></footer>
+          <footer className="page-footer"><span>IntentFlow SDN <span className="footer-dot">·</span> Data provenance is shown per panel</span><span>{connection.state === "demo" ? "Backend integration not configured" : connection.state === "connected" ? "Backend connected · topology and planning are backend-sourced; metrics are demo or unavailable" : connection.state === "checking" ? "Checking backend connection" : "Backend disconnected · backend-sourced data may be unavailable"}</span></footer>
         </main>
       </div>
     </div>
