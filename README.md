@@ -89,7 +89,9 @@ The following distinction is important:
   remain unverified.
 - **Frontend:** all seven requested pages exist; their live/backend portions
   are explicitly connected, while illustrative dashboard values remain demo
-  data.
+  data. The Network Topology editor also includes a complete link
+  configuration table and a seeded random topology generator that reuses the
+  canonical DESIGN model and validation path.
 
 The legacy latency and bandwidth pipelines and the generalized orchestration
 share implementation concepts but are separate paths. The code explicitly
@@ -433,6 +435,17 @@ candidate paths, constraint outcomes, and deterministic selection or rejection
 explanation. Changing the active version affects subsequent previews. Missing
 endpoints are rejected instead of being inferred by the LLM.
 
+The Network Topology editor additionally provides a complete link configuration
+view for every stored topology, including host-switch attachments and switch
+switch links. Each row exposes source/destination ports, configured bandwidth,
+delay, packet loss, administrative state, and edit actions, while keeping the
+visual topology graph and table synchronized with the canonical design model.
+The same editor also supports a seeded random topology generator with STAR,
+RING, TREE, MESH, and RANDOM patterns. Generated graphs are validated against
+the same schema, versioning, and activation rules as manually created DESIGN
+layouts; generated values are DESIGN configuration attributes, not live network
+telemetry.
+
 For compatibility with the existing live execution path, a direct preview
 request with no active DESIGN topology may invoke the worker's one-shot fixed
 diamond discovery. The frontend's topology-aware preview requires an active
@@ -442,8 +455,7 @@ topology is available.
 
 DESIGN planning uses configured graph properties only. A configured bottleneck
 capacity is not achieved throughput, configured delay is not measured RTT, and
-no network measurement is collected during preview. Missing required properties
-remain UNKNOWN. A DESIGN plan is for simulation and cannot be deployed.
+no network measurement is collected during preview. Missing required propertiesremain UNKNOWN. A DESIGN plan is for simulation and cannot be deployed.
 Saving or activating a DESIGN definition does not start Mininet or install
 flows.
 
@@ -540,6 +552,12 @@ The seven pages are:
 5. Network metrics.
 6. Execution history.
 7. System configuration.
+
+The Network Topology page now includes a complete link configuration table
+with host-switch and switch-switch rows, plus a random topology generator that
+creates valid DESIGN graphs from configurable parameters and reproducible
+seeds. These features work through the same canonical topology schema used by
+manual topology authoring, import, activation, and version history.
 
 The API client calls FastAPI when `NEXT_PUBLIC_API_BASE_URL` is configured.
 If the API is unavailable, the UI may enter demo mode. Demo metrics,
