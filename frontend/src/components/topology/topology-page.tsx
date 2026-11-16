@@ -15,6 +15,8 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import {
+  ArrowDown,
+  ArrowUp,
   Download,
   FileJson2,
   Info,
@@ -36,6 +38,11 @@ import type {
   TopologyLinkDefinition,
   TopologyResponse,
 } from "@/types/api";
+import {
+  generateRandomTopology,
+  type GeneratedTopology,
+  type RandomTopologySettings,
+} from "@/lib/topology-generator";
 
 type NetworkData = {
   label: string;
@@ -53,6 +60,7 @@ type NetworkData = {
   dpid?: number;
   ports?: number[];
 };
+
 type NetworkNodeType = Node<NetworkData, "network">;
 type NetworkEdgeData = {
   status: string;
@@ -95,7 +103,7 @@ function NetworkNode({ data, selected }: NodeProps<NetworkNodeType>) {
 const nodeTypes = { network: NetworkNode };
 
 function graphToFlow(
-  definition: Pick<TopologyDefinition, "graph" | "positions">,
+  definition: Pick<TopologyDefinitionInput, "graph" | "positions">,
 ): { nodes: NetworkNodeType[]; edges: NetworkEdgeType[] } {
   const nodes: NetworkNodeType[] = [];
   const edges: NetworkEdgeType[] = [];
@@ -129,7 +137,7 @@ function graphToFlow(
         attachmentCapacity: host.attachment_capacity_mbps,
         attachmentDelay: host.attachment_delay_ms,
         attachmentLoss: host.attachment_packet_loss_percent,
-        attachmentAdminUp: host.attachment_admin_up ?? true,
+        attachmentAdminUp: host.attachment_admin_up,
         detail: `${host.ip} · ${host.mac} · Attached to ${host.switch}:${host.switch_port}`,
       },
     });
@@ -141,17 +149,17 @@ function graphToFlow(
         ? "host attachment"
         : `${host.attachment_capacity_mbps} Mbps`,
       type: "smoothstep",
-      style: edgeStyle,
       data: {
         ...defaultEdgeData(),
         status: host.attachment_admin_up === false ? "DISCONNECTED" : "DESIGN",
         capacity_mbps: host.attachment_capacity_mbps,
         delay_ms: host.attachment_delay_ms,
         packet_loss_percent: host.attachment_packet_loss_percent,
-        admin_up: host.attachment_admin_up ?? true,
+        admin_up: host.attachment_admin_up,
         target_port: host.switch_port,
         attachment: true,
       },
+      style: host.attachment_admin_up === false ? { stroke: "var(--error)", strokeWidth: 2 } : edgeStyle,
     });
   }
   graph.links.forEach((link, index) => {
@@ -168,7 +176,7 @@ function graphToFlow(
         capacity_mbps: link.bw_mbps,
         delay_ms: link.delay_ms,
         packet_loss_percent: link.packet_loss_percent,
-        admin_up: link.admin_up ?? true,
+        admin_up: link.admin_up,
         source_port: link.port_a,
         target_port: link.port_b,
         attachment: false,
@@ -271,7 +279,7 @@ function definitionFromFlow(
           attachment_capacity_mbps: node.data.attachmentCapacity ?? null,
           attachment_delay_ms: node.data.attachmentDelay ?? null,
           attachment_packet_loss_percent: node.data.attachmentLoss ?? null,
-          attachment_admin_up: node.data.attachmentAdminUp ?? true,
+          attachment_admin_up: node.data.attachmentAdminUp ?? null,
         },
       ]),
   );
@@ -289,7 +297,7 @@ function definitionFromFlow(
       bw_mbps: edge.data?.capacity_mbps ?? null,
       delay_ms: edge.data?.delay_ms ?? null,
       packet_loss_percent: edge.data?.packet_loss_percent ?? null,
-      admin_up: edge.data?.admin_up ?? true,
+      admin_up: edge.data?.admin_up ?? null,
       intf_a: null,
       intf_b: null,
     }));
@@ -330,6 +338,38 @@ function nextHostAddress(nodes: NetworkNodeType[]): { ip: string; mac: string } 
   return null;
 }
 
+type ConnectionRow = {
+  id: string;
+  source: string;
+  sourcePort: number | null;
+  destination: string;
+  destinationPort: number | null;
+  type: "HOST_SWITCH" | "SWITCH_SWITCH";
+  capacity: number | null;
+  delay: number | null;
+  packetLoss: number | null;
+  adminUp: boolean | null;
+};
+
+const initialGeneratorSettings: RandomTopologySettings = {
+  name: "Generated topology",
+  switchCount: 6,
+  hostCount: 6,
+  pattern: "RANDOM",
+  extraLinks: 2,
+  bandwidthMinMbps: 20,
+  bandwidthMaxMbps: 100,
+  delayMinMs: 1,
+  delayMaxMs: 10,
+  packetLossMinPercent: 0,
+  packetLossMaxPercent: 1,
+  seed: "",
+};
+
+function configuredValue(value: number | null, unit: string): string {
+  return value == null ? "UNKNOWN" : `${value} ${unit}`;
+}
+
 export function TopologyPage() {
   const [nodes, setNodes, onNodesChange] = useNodesState<NetworkNodeType>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<NetworkEdgeType>([]);
@@ -355,6 +395,11 @@ export function TopologyPage() {
   const [loading, setLoading] = useState(Boolean(API_BASE_URL));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [linkFilter, setLinkFilter] = useState("");
+  const [linkSort, setLinkSort] = useState<"source" | "destination" | "type">("source");
+  const [linkSortAscending, setLinkSortAscending] = useState(true);
+  const [generatorSettings, setGeneratorSettings] = useState(initialGeneratorSettings);
+  const [generatedPreview, setGeneratedPreview] = useState<GeneratedTopology | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
 
   const selectedNode = useMemo(
@@ -374,6 +419,47 @@ export function TopologyPage() {
   const readOnlyVersion = Boolean(
     definition && versions.length && definition.version !== versions[0].version,
   );
+  const connectionRows = useMemo<ConnectionRow[]>(() => {
+    const nodeById = new Map(nodes.map((node) => [node.id, node]));
+    return edges.map((edge) => {
+      const sourceNode = nodeById.get(edge.source);
+      const targetNode = nodeById.get(edge.target);
+      const attachment = Boolean(edge.data?.attachment)
+        || sourceNode?.data.kind === "host"
+        || targetNode?.data.kind === "host";
+      return {
+        id: edge.id,
+        source: edge.source,
+        sourcePort: attachment
+          ? sourceNode?.data.kind === "host" ? null : edge.data?.source_port ?? null
+          : edge.data?.source_port ?? null,
+        destination: edge.target,
+        destinationPort: attachment
+          ? targetNode?.data.kind === "host" ? null : edge.data?.target_port ?? null
+          : edge.data?.target_port ?? null,
+        type: attachment ? "HOST_SWITCH" : "SWITCH_SWITCH",
+        capacity: edge.data?.capacity_mbps ?? null,
+        delay: edge.data?.delay_ms ?? null,
+        packetLoss: edge.data?.packet_loss_percent ?? null,
+        adminUp: edge.data?.admin_up ?? null,
+      };
+    });
+  }, [edges, nodes]);
+  const visibleConnectionRows = useMemo(() => {
+    const query = linkFilter.trim().toLowerCase();
+    return connectionRows
+      .filter((row) => !query || [
+        row.source,
+        row.destination,
+        row.type,
+        row.sourcePort ?? "",
+        row.destinationPort ?? "",
+      ].some((value) => String(value).toLowerCase().includes(query)))
+      .sort((left, right) => {
+        const order = String(left[linkSort]).localeCompare(String(right[linkSort]), undefined, { numeric: true });
+        return linkSortAscending ? order : -order;
+      });
+  }, [connectionRows, linkFilter, linkSort, linkSortAscending]);
 
   const applyDefinition = useCallback((item: TopologyDefinition) => {
     const flow = graphToFlow(item);
@@ -467,6 +553,57 @@ export function TopologyPage() {
     setDirty(true);
     setError(null);
   };
+
+  const previewGeneratedTopology = () => {
+    try {
+      setGeneratedPreview(generateRandomTopology(generatorSettings));
+      setError(null);
+    } catch (generationError) {
+      setGeneratedPreview(null);
+      setError(generationError instanceof Error ? generationError.message : "Random topology settings are invalid.");
+    }
+  };
+
+  const updateGeneratorSetting = <K extends keyof RandomTopologySettings>(
+    key: K,
+    value: RandomTopologySettings[K],
+  ) => {
+    setGeneratorSettings((current) => ({ ...current, [key]: value }));
+    setGeneratedPreview(null);
+  };
+
+  const stageGeneratedTopology = (replaceCurrent: boolean) => {
+    if (!generatedPreview) return;
+    if (replaceCurrent && (!definition || readOnlyVersion)) {
+      setError("Load the latest saved DESIGN topology before replacing it with a generated draft.");
+      return;
+    }
+    if (replaceCurrent && !window.confirm(
+      `Replace the current editor contents for "${topologyName}" with this generated topology? The saved topology is not changed until you save a new version.`,
+    )) return;
+    if (!replaceCurrent && dirty && !window.confirm(
+      "Replace the current unsaved editor draft with a new generated topology? Saved topology versions will not be changed.",
+    )) return;
+
+    const topology = {
+      ...generatedPreview.topology,
+      name: replaceCurrent ? topologyName : generatedPreview.topology.name,
+    };
+    const flow = graphToFlow(topology);
+    setNodes(flow.nodes);
+    setEdges(flow.edges);
+    setTopologyName(topology.name);
+    if (!replaceCurrent) {
+      setDefinition(null);
+      setVersions([]);
+    }
+    setSelected(null);
+    setViewMode("DESIGN");
+    setLiveTopology(null);
+    setDirty(true);
+    setGeneratedPreview(null);
+    setError(null);
+  };
   const handleNodesChange: typeof onNodesChange = (changes) => {
     onNodesChange(changes);
     if (changes.some((change) => change.type === "position" && change.position)) markDirty();
@@ -487,6 +624,7 @@ export function TopologyPage() {
       return {
         ...edge,
         target: updates.switchName ?? edge.target,
+        style: updates.attachmentAdminUp === false ? { stroke: "var(--error)", strokeWidth: 2 } : edgeStyle,
         label: updates.attachmentCapacity !== undefined && updates.attachmentCapacity !== null
           ? `${updates.attachmentCapacity} Mbps`
           : edge.label,
@@ -503,7 +641,7 @@ export function TopologyPage() {
           packet_loss_percent: updates.attachmentLoss !== undefined
             ? updates.attachmentLoss
             : edge.data?.packet_loss_percent ?? null,
-          admin_up: updates.attachmentAdminUp ?? edge.data?.admin_up ?? true,
+          admin_up: updates.attachmentAdminUp !== undefined ? updates.attachmentAdminUp : edge.data?.admin_up ?? null,
         },
       };
     }));
@@ -535,10 +673,10 @@ export function TopologyPage() {
                   ...item.data,
                   switchName: selectedEdge.target,
                   switchPort: updates.target_port ?? selectedEdge.data?.target_port ?? item.data.switchPort,
-                  attachmentCapacity: updates.capacity_mbps ?? item.data.attachmentCapacity,
-                  attachmentDelay: updates.delay_ms ?? item.data.attachmentDelay,
-                  attachmentLoss: updates.packet_loss_percent ?? item.data.attachmentLoss,
-                  attachmentAdminUp: updates.admin_up ?? item.data.attachmentAdminUp,
+                  attachmentCapacity: updates.capacity_mbps !== undefined ? updates.capacity_mbps : item.data.attachmentCapacity,
+                  attachmentDelay: updates.delay_ms !== undefined ? updates.delay_ms : item.data.attachmentDelay,
+                  attachmentLoss: updates.packet_loss_percent !== undefined ? updates.packet_loss_percent : item.data.attachmentLoss,
+                  attachmentAdminUp: updates.admin_up !== undefined ? updates.admin_up : item.data.attachmentAdminUp,
                 },
               }
             : item,
@@ -1081,6 +1219,54 @@ export function TopologyPage() {
         </div>}
       </Panel>
 
+      <Panel className="topology-generator-panel">
+        <div className="panel-title-row">
+          <div><h3>Generate random topology</h3><p>Preview a reproducible DESIGN graph, then stage it in the existing editor.</p></div>
+          <StatusPill tone="info">DESIGN ONLY</StatusPill>
+        </div>
+        <div className="topology-generator-fields">
+          <label><span>Generated topology name</span><input value={generatorSettings.name} maxLength={80} onChange={(event) => updateGeneratorSetting("name", event.target.value)} disabled={!canEdit} /></label>
+          <label><span>Switches</span><input type="number" min={2} max={32} step={1} value={generatorSettings.switchCount} onChange={(event) => updateGeneratorSetting("switchCount", Number(event.target.value))} disabled={!canEdit} /></label>
+          <label><span>Hosts</span><input type="number" min={1} max={128} step={1} value={generatorSettings.hostCount} onChange={(event) => updateGeneratorSetting("hostCount", Number(event.target.value))} disabled={!canEdit} /></label>
+          <label><span>Pattern</span>
+            <select value={generatorSettings.pattern} onChange={(event) => updateGeneratorSetting("pattern", event.target.value as RandomTopologySettings["pattern"])} disabled={!canEdit}>
+              {(["STAR", "RING", "TREE", "MESH", "RANDOM"] as const).map((pattern) => <option key={pattern} value={pattern}>{pattern}</option>)}
+            </select>
+          </label>
+          <label><span>Extra switch links</span><input type="number" min={0} step={1} value={generatorSettings.extraLinks} onChange={(event) => updateGeneratorSetting("extraLinks", Number(event.target.value))} disabled={!canEdit || generatorSettings.pattern === "MESH"} /></label>
+          <label><span>Bandwidth min (Mbps)</span><input type="number" min={0.01} step="any" value={generatorSettings.bandwidthMinMbps} onChange={(event) => updateGeneratorSetting("bandwidthMinMbps", Number(event.target.value))} disabled={!canEdit} /></label>
+          <label><span>Bandwidth max (Mbps)</span><input type="number" min={0.01} step="any" value={generatorSettings.bandwidthMaxMbps} onChange={(event) => updateGeneratorSetting("bandwidthMaxMbps", Number(event.target.value))} disabled={!canEdit} /></label>
+          <label><span>Delay min (ms)</span><input type="number" min={0} step="any" value={generatorSettings.delayMinMs} onChange={(event) => updateGeneratorSetting("delayMinMs", Number(event.target.value))} disabled={!canEdit} /></label>
+          <label><span>Delay max (ms)</span><input type="number" min={0} step="any" value={generatorSettings.delayMaxMs} onChange={(event) => updateGeneratorSetting("delayMaxMs", Number(event.target.value))} disabled={!canEdit} /></label>
+          <label><span>Packet loss min (%)</span><input type="number" min={0} max={100} step="any" value={generatorSettings.packetLossMinPercent} onChange={(event) => updateGeneratorSetting("packetLossMinPercent", Number(event.target.value))} disabled={!canEdit} /></label>
+          <label><span>Packet loss max (%)</span><input type="number" min={0} max={100} step="any" value={generatorSettings.packetLossMaxPercent} onChange={(event) => updateGeneratorSetting("packetLossMaxPercent", Number(event.target.value))} disabled={!canEdit} /></label>
+          <label><span>Random seed (optional)</span><input value={generatorSettings.seed ?? ""} maxLength={80} onChange={(event) => updateGeneratorSetting("seed", event.target.value)} disabled={!canEdit} placeholder="Generated if blank" /></label>
+        </div>
+        <div className="topology-generator-footer">
+          <span>Generated link values are configured DESIGN attributes, not measured network performance.</span>
+          <button type="button" className="button-secondary compact-button" onClick={previewGeneratedTopology} disabled={!canEdit || !API_BASE_URL}>
+            Generate preview
+          </button>
+        </div>
+        {generatedPreview && (
+          <div className="topology-generator-preview">
+            <div className="panel-title-row">
+              <div><h3>Preview · {generatedPreview.topology.name}</h3><p>Seed {generatedPreview.seed} · {generatedPreview.topology.graph.switches && Object.keys(generatedPreview.topology.graph.switches).length} switches · {Object.keys(generatedPreview.topology.graph.hosts).length} hosts · {generatedPreview.topology.graph.links.length} switch links · {Object.keys(generatedPreview.topology.graph.hosts).length + generatedPreview.topology.graph.links.length} total connections</p></div>
+              <StatusPill tone="warning">NOT SAVED</StatusPill>
+            </div>
+            <div className="topology-generator-preview-actions">
+              <button type="button" className="button-secondary compact-button" onClick={() => stageGeneratedTopology(false)} disabled={!canEdit}>
+                Use as new topology
+              </button>
+              <button type="button" className="button-secondary compact-button" onClick={() => stageGeneratedTopology(true)} disabled={!canEdit || !definition}>
+                Replace current editor topology
+              </button>
+            </div>
+            <small>Staging only updates this editor. Save version creates a topology or appends a version through the existing workflow; saving the active topology advances its active version. DESIGN changes do not deploy to Mininet or the network.</small>
+          </div>
+        )}
+      </Panel>
+
       {error && <div className="submit-notice notice-warning" role="alert"><Info size={15} /><span>{error}</span></div>}
       {!API_BASE_URL && <div className="submit-notice notice-warning" role="status"><Info size={15} /><span>Topology management requires the configured backend API. No local-only changes will be presented as saved.</span></div>}
       {viewMode === "LIVE" && liveTopology && <div className="submit-notice notice-info"><Info size={15} /><span>Read-only LIVE discovery snapshot · {new Date(liveTopology.snapshot_timestamp).toLocaleString()} · {liveTopology.snapshot_status}. This snapshot is not a DESIGN topology and cannot be edited or activated as a design.</span></div>}
@@ -1102,7 +1288,7 @@ export function TopologyPage() {
             </button>
           </div>
         </div>
-        <div className="react-flow-wrap">
+        <div className="react-flow-wrap" id="topology-visualization">
           <ReactFlow
             nodes={nodes}
             edges={edges.map((edge) => ({
@@ -1183,6 +1369,46 @@ export function TopologyPage() {
           <span><i className="legend-line inactive-line" /> Administratively down</span>
           <span className="legend-note"><Info size={13} /> Configured capacity is not measured throughput.</span>
         </div>
+      </Panel>
+
+      <Panel className="topology-links-panel">
+        <div className="panel-title-row topology-links-heading">
+          <div><h3>Link configuration</h3><p>All DESIGN connections or discovered LIVE links, including host-switch attachments. Values are configured attributes.</p></div>
+          <StatusPill>{connectionRows.length} connections</StatusPill>
+        </div>
+        <div className="topology-links-controls">
+          <label><span className="sr-only">Filter links</span><input type="search" value={linkFilter} onChange={(event) => setLinkFilter(event.target.value)} placeholder="Filter by node, port, or type" /></label>
+          <label><span>Sort by</span><select value={linkSort} onChange={(event) => setLinkSort(event.target.value as typeof linkSort)}><option value="source">Source node</option><option value="destination">Destination node</option><option value="type">Link type</option></select></label>
+          <button type="button" className="button-secondary compact-button" onClick={() => setLinkSortAscending((current) => !current)} aria-label={`Sort ${linkSortAscending ? "descending" : "ascending"}`}>
+            {linkSortAscending ? <ArrowUp size={13} /> : <ArrowDown size={13} />} {linkSortAscending ? "Ascending" : "Descending"}
+          </button>
+        </div>
+        {connectionRows.length === 0 ? (
+          <div className="topology-links-empty">No links are present in this topology.</div>
+        ) : visibleConnectionRows.length === 0 ? (
+          <div className="topology-links-empty">No links match this filter.</div>
+        ) : (
+          <div className="topology-links-table-wrap">
+            <table className="topology-links-table">
+              <thead><tr>
+                <th>Source node</th><th>Source port</th><th>Destination node</th><th>Destination port</th><th>Link type</th>
+                <th>Bandwidth</th><th>Delay</th><th>Packet loss</th><th>Administrative state</th><th>Action</th>
+              </tr></thead>
+              <tbody>{visibleConnectionRows.map((row) => (
+                <tr key={row.id} className={selected?.type === "edge" && selected.id === row.id ? "topology-link-row-selected" : ""}>
+                  <td>{row.source}</td><td>{row.sourcePort ?? "—"}</td><td>{row.destination}</td><td>{row.destinationPort ?? "—"}</td>
+                  <td><span className={`topology-link-type ${row.type === "HOST_SWITCH" ? "topology-link-attachment" : ""}`}>{row.type}</span></td>
+                  <td>{configuredValue(row.capacity, "Mbps")}</td><td>{configuredValue(row.delay, "ms")}</td><td>{configuredValue(row.packetLoss, "%")}</td>
+                  <td>{row.adminUp == null ? "UNKNOWN" : row.adminUp ? "UP" : "DOWN"}</td>
+                  <td><button type="button" className="button-secondary compact-button" onClick={() => {
+                    setSelected({ type: "edge", id: row.id });
+                    document.getElementById("topology-visualization")?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  }} disabled={viewMode === "LIVE" || !canEdit}>Edit</button></td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
       </Panel>
 
       <div className="topology-bottom-grid">

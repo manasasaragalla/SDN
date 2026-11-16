@@ -320,6 +320,34 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .topology-mode-note > span:last-child { line-height: 1.5; }
 .inventory-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 33px; border-bottom: 1px solid var(--border-strong); color: var(--text-secondary); font-size: 9px; }
 .inventory-row:last-child { border: 0; }.inventory-row > div { display: flex; align-items: center; gap: 7px; width: 95px; color: var(--text-secondary); }.inventory-row strong { flex: 1; color: var(--text-secondary); font-weight: 500; }
+.topology-generator-panel, .topology-links-panel { display: grid; gap: 13px; padding: 15px; }
+.topology-generator-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.topology-generator-fields label, .topology-links-controls label { display: flex; min-width: 0; flex-direction: column; gap: 5px; color: var(--text-secondary); font-size: 9px; }
+.topology-generator-fields input, .topology-generator-fields select, .topology-links-controls input, .topology-links-controls select { min-width: 0; width: 100%; height: 31px; border: 1px solid var(--border-strong); border-radius: 4px; padding: 0 8px; color: var(--text); background: var(--background); font-size: 10px; }
+.topology-generator-fields select, .topology-links-controls select { color-scheme: dark; }
+.topology-generator-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-top: 10px; border-top: 1px solid var(--border-strong); }
+.topology-generator-footer > span, .topology-generator-preview > small { color: var(--text-muted); font-size: 9px; line-height: 1.5; }
+.topology-generator-preview { display: grid; gap: 10px; padding: 13px; border: 1px solid var(--accent); border-radius: 5px; background: var(--sidebar); }
+.topology-generator-preview .panel-title-row { align-items: flex-start; }
+.topology-generator-preview .panel-title-row h3 { margin: 0; font-size: 10px; }
+.topology-generator-preview .panel-title-row p { margin: 5px 0 0; color: var(--text-secondary); font-size: 9px; line-height: 1.5; }
+.topology-generator-preview-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+.topology-links-heading { align-items: flex-start; }
+.topology-links-heading h3 { margin: 0; font-size: 11px; }
+.topology-links-heading p { margin: 4px 0 0; color: var(--text-secondary); font-size: 9px; line-height: 1.5; }
+.topology-links-controls { display: flex; align-items: flex-end; gap: 9px; }
+.topology-links-controls label:first-child { flex: 1; }
+.topology-links-controls label:nth-child(2) { width: 170px; }
+.topology-links-controls .compact-button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 31px; }
+.topology-links-table-wrap { width: 100%; overflow-x: auto; border: 1px solid var(--border-strong); border-radius: 5px; }
+.topology-links-table { width: 100%; min-width: 1050px; border-collapse: collapse; text-align: left; }
+.topology-links-table th { padding: 10px; border-bottom: 1px solid var(--border-strong); color: var(--text-secondary); background: var(--surface-raised); font-size: 9px; font-weight: 600; white-space: nowrap; }
+.topology-links-table td { padding: 9px 10px; border-bottom: 1px solid var(--border-strong); color: var(--text-secondary); font-size: 9px; white-space: nowrap; }
+.topology-links-table tbody tr:last-child td { border-bottom: 0; }
+.topology-links-table tbody tr:hover, .topology-link-row-selected { background: var(--surface); }
+.topology-link-type { display: inline-block; padding: 3px 5px; border: 1px solid var(--border-strong); border-radius: 4px; color: var(--accent); font-size: 8px; font-weight: 600; }
+.topology-link-attachment { color: var(--periwinkle); }
+.topology-links-empty { padding: 24px 12px; border: 1px dashed var(--border-strong); border-radius: 5px; color: var(--text-secondary); font-size: 10px; text-align: center; }
 .capacity-compare { display: grid; grid-template-columns: 125px 1fr 55px; align-items: center; gap: 11px; margin-top: 17px; }
 .capacity-path { color: var(--text); font-size: 9px; }.capacity-path small { display: block; margin-top: 4px; color: var(--text-muted); font-size: 8px; }
 .capacity-track { height: 6px; border-radius: 5px; background: var(--border-strong); }.capacity-track i { display: block; height: 100%; border-radius: 5px; background: var(--success); }.capacity-track-blue i { background: var(--accent); }
@@ -587,9 +615,17 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .planning-result-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .metrics-live-section, .metrics-demo-section { padding: 13px; }
   .metrics-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .topology-generator-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 @media (max-width: 560px) {
+  .topology-generator-panel, .topology-links-panel { padding: 11px; }
+  .topology-generator-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .topology-generator-footer, .topology-links-controls { align-items: stretch; flex-direction: column; }
+  .topology-generator-footer .compact-button, .topology-links-controls .compact-button { align-self: flex-start; }
+  .topology-links-controls label:nth-child(2) { width: 100%; }
+  .topology-generator-preview .panel-title-row { flex-direction: column; gap: 8px; }
+  .topology-generator-preview-actions { flex-direction: column; align-items: stretch; }
   .planning-page-content, .planning-page-content > * { min-width: 0; max-width: 100%; }
   .planning-page-content .planning-request { width: 100%; box-sizing: border-box; }
   .planning-page-content .planning-request-main { width: 100%; min-width: 0; }

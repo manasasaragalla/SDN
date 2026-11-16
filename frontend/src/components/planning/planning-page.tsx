@@ -25,16 +25,19 @@ function candidateMetric(value: number | null, unit: string): string {
 
 function CandidateCard({ candidate }: { candidate: TopologyPlanningCandidate }) {
   const metrics = candidate.configured_metrics;
+  const displayStatus = candidate.selection === "SELECTED" ? "SELECTED" : candidate.status;
   return (
-    <article className={`planning-result-candidate ${candidate.selection === "SELECTED" ? "planning-result-selected" : ""}`}>
+    <article
+      aria-label={`Candidate ${candidate.path.join(" to ")}, ${displayStatus}`}
+      className={`planning-result-candidate ${candidate.selection === "SELECTED" ? "planning-result-selected" : ""}`}
+    >
       <div className="planning-result-heading">
         <div>
           <strong>{candidate.path.join(" → ")}</strong>
           <code>{candidate.candidate_id}</code>
         </div>
         <div className="planning-result-badges">
-          <StatusPill tone={stateTone(candidate.status)}>{candidate.status}</StatusPill>
-          <StatusPill tone={candidate.selection === "SELECTED" ? "info" : "neutral"}>{candidate.selection}</StatusPill>
+          <StatusPill tone={stateTone(displayStatus)}>{displayStatus}</StatusPill>
         </div>
       </div>
       <div className="planning-result-metrics">

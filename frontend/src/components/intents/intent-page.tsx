@@ -25,6 +25,10 @@ const examples = [
 ];
 const demoHosts = ["h1", "h2", "h3", "h4"];
 
+function BackendPreviewTag() {
+  return <span className="demo-tag"><span /> BACKEND PREVIEW</span>;
+}
+
 function localIntentPreview(text: string, source: string, destination: string) {
   const lower = text.toLowerCase();
   const metric = lower.includes("latency") ? "latency" : lower.includes("bandwidth") ? "bandwidth" : lower.includes("packet loss") || lower.includes("packet_loss") ? "packet_loss" : null;
@@ -249,12 +253,12 @@ export function IntentPage() {
   return (
     <div className="page-stack">
       {API_BASE_URL
-        ? <div className="demo-banner"><div className="demo-banner-icon"><Sparkles size={17} /></div><div><strong>Backend preview enabled</strong><span>Only explicit preview and execution requests reach the API. Other dashboard measurements remain demo data.</span></div><DemoTag /></div>
+        ? <div className="demo-banner"><div className="demo-banner-icon"><Sparkles size={17} /></div><div><strong>Backend preview enabled</strong><span>Only explicit preview and execution requests reach the API. Other dashboard measurements remain demo data.</span></div><BackendPreviewTag /></div>
         : <div className="demo-banner"><div className="demo-banner-icon"><Sparkles size={17} /></div><div><strong>Intent parsing is not connected</strong><span>Previews below are local examples only. No LLM, backend, or network operation is invoked.</span></div><DemoTag /></div>}
       <div className="intent-layout">
         <div className="intent-main-column">
           <Panel className="intent-form-panel">
-            <SectionHeading title="Describe your network intent" description="Use plain language to express the outcome you need." action={<DemoTag />} />
+            <SectionHeading title="Describe your network intent" description="Use plain language to express the outcome you need." action={API_BASE_URL ? <BackendPreviewTag /> : <DemoTag />} />
             <form onSubmit={submit}>
               <label className="form-label" htmlFor="intent-text">Natural language requirement</label>
               <textarea id="intent-text" className="intent-textarea" value={text} onChange={(event) => { setText(event.target.value); resetPreview(); }} placeholder="e.g. Minimize latency between h1 and h4 while maintaining bandwidth above 20 Mbps" />
@@ -280,7 +284,7 @@ export function IntentPage() {
         </div>
 
         <Panel className="parsed-panel">
-          <div className="panel-title-row"><div className="parsed-title"><div className="parsed-icon"><FileJson2 size={17} /></div><div><h3>Structured preview</h3><p>{API_BASE_URL ? "Intent interpretation, planning and execution status" : "Local illustrative interpretation"}</p></div></div><span className="local-badge">{API_BASE_URL ? "API" : "LOCAL"}</span></div>
+          <div className="panel-title-row"><div className="parsed-title"><div className="parsed-icon"><FileJson2 size={17} /></div><div><h3>Structured preview</h3><p>{API_BASE_URL ? "Intent interpretation, planning and execution status" : "Local illustrative interpretation"}</p></div></div>{API_BASE_URL ? <BackendPreviewTag /> : <span className="local-badge">LOCAL</span>}</div>
           {API_BASE_URL ? serverPreview ? (
             <div className="parsed-content">
               <div className="parsed-status parsed-status-group">
