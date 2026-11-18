@@ -44,6 +44,12 @@ import {
   type RandomTopologySettings,
 } from "@/lib/topology-generator";
 import { nextAvailableAttachmentPort } from "@/lib/topology-port-allocation";
+import {
+  activeTopologyLabel,
+  activateVersionRequest,
+  canActivateTopology,
+  isHistoricalVersion,
+} from "@/lib/topology-version-controls";
 
 type NetworkData = {
   label: string;
@@ -377,8 +383,7 @@ export function TopologyPage() {
   const [catalog, setCatalog] = useState<TopologyCatalogItem[]>([]);
   const [definition, setDefinition] = useState<TopologyDefinition | null>(null);
   const [topologyName, setTopologyName] = useState("");
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [activeVersion, setActiveVersion] = useState<number | null>(null);
+  const [activeTopology, setActiveTopology] = useState<TopologyDefinition | null>(null);
   const [versions, setVersions] = useState<TopologyDefinition[]>([]);
   const [dirty, setDirty] = useState(false);
   const [viewMode, setViewMode] = useState<"DESIGN" | "LIVE">("DESIGN");
@@ -415,10 +420,15 @@ export function TopologyPage() {
     () => nodes.filter((node) => node.data.kind === "switch"),
     [nodes],
   );
-  const active = Boolean(definition && definition.id === activeId && definition.version === activeVersion);
+  const active = Boolean(
+    definition
+      && activeTopology
+      && definition.id === activeTopology.id
+      && definition.version === activeTopology.version,
+  );
   const editable = viewMode === "DESIGN";
   const readOnlyVersion = Boolean(
-    definition && versions.length && definition.version !== versions[0].version,
+    definition && isHistoricalVersion(definition.version, versions[0]?.version),
   );
   const connectionRows = useMemo<ConnectionRow[]>(() => {
     const nodeById = new Map(nodes.map((node) => [node.id, node]));
@@ -493,8 +503,7 @@ export function TopologyPage() {
         apiRequest<ActiveTopologyResponse>("/api/v1/topologies/active"),
       ]);
       setCatalog(list.topologies);
-      setActiveId(current.topology?.id ?? null);
-      setActiveVersion(current.topology?.version ?? null);
+      setActiveTopology(current.topology);
       setError(null);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Topology catalog could not be loaded.");
@@ -524,8 +533,7 @@ export function TopologyPage() {
           : { versions: [] };
         if (cancelled) return;
         setCatalog(list.topologies);
-        setActiveId(current.topology?.id ?? null);
-        setActiveVersion(current.topology?.version ?? null);
+        setActiveTopology(current.topology);
         if (selected) {
           applyDefinition(selected);
           setVersions(history.versions);
@@ -950,7 +958,7 @@ export function TopologyPage() {
       setVersions(await apiRequest<{ versions: TopologyDefinition[] }>(
         `/api/v1/topologies/${encodeURIComponent(saved.id)}/versions`,
       ).then((result) => result.versions));
-      if (activeId === saved.id) setActiveVersion(saved.version);
+      if (activeTopology?.id === saved.id) setActiveTopology(saved);
       return saved;
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Topology could not be saved.");
@@ -973,25 +981,16 @@ export function TopologyPage() {
   };
 
   const activate = async () => {
-    if (!definition && dirty) {
-      const saved = await save();
-      if (!saved) return;
-      await apiRequest<ActiveTopologyResponse>(
-        `/api/v1/topologies/${encodeURIComponent(saved.id)}/activate`,
-        { method: "POST", body: JSON.stringify({}) },
-      );
-      await refreshCatalog();
-      return;
-    }
-    if (!definition) return;
     try {
-      if (dirty) {
-        const saved = await save();
-        if (!saved) return;
+      let target = definition;
+      if (!target && !dirty) return;
+      if (!target || dirty) {
+        target = await save();
       }
+      if (!target) return;
       await apiRequest<ActiveTopologyResponse>(
-        `/api/v1/topologies/${encodeURIComponent(definition.id)}/activate`,
-        { method: "POST", body: JSON.stringify({}) },
+        `/api/v1/topologies/${encodeURIComponent(target.id)}/activate`,
+        activateVersionRequest(target.version),
       );
       await refreshCatalog();
     } catch (requestError) {
@@ -1113,8 +1112,8 @@ export function TopologyPage() {
     <div className="page-stack">
       <div className="topology-toolbar">
         <div className="topology-summary">
-          <StatusPill tone={active ? "positive" : "warning"}>
-            {active ? "Active planning topology" : "No active design"}
+          <StatusPill tone={activeTopology ? "positive" : "warning"}>
+            {activeTopologyLabel(activeTopology)}
           </StatusPill>
           <span>{switchNodes.length} switches</span><span className="toolbar-sep">·</span>
           <span>{nodes.length - switchNodes.length} hosts</span><span className="toolbar-sep">·</span>
@@ -1141,7 +1140,11 @@ export function TopologyPage() {
               <option value="">Select a topology…</option>
               {catalog.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {item.name} · v{item.version}{item.active ? " · ACTIVE" : ""}
+                  {item.name} · v{item.version}{activeTopology?.id === item.id
+                    ? activeTopology.version === item.version
+                      ? " · ACTIVE"
+                      : ` · ACTIVE v${activeTopology.version}`
+                    : ""}
                 </option>
               ))}
             </select>
@@ -1152,7 +1155,11 @@ export function TopologyPage() {
           <div className="topology-control-actions">
             <button className="button-secondary compact-button" onClick={startNew} disabled={!API_BASE_URL || viewMode === "LIVE"}><Plus size={13} /> New</button>
             <button className="button-primary compact-button" onClick={() => void save()} disabled={!canEdit || !dirty || saving}><Save size={13} /> {saving ? "Saving…" : "Save version"}</button>
-            <button className="button-secondary compact-button" onClick={() => void activate()} disabled={!definition && !dirty || active && !dirty || !API_BASE_URL}><span>Activate</span></button>
+            <button
+              className="button-secondary compact-button"
+              onClick={() => void activate()}
+              disabled={!canActivateTopology(Boolean(definition), dirty, active, Boolean(API_BASE_URL))}
+            ><span>Activate</span></button>
             <button className="button-secondary compact-button" onClick={() => void duplicate()} disabled={!definition || !API_BASE_URL}><span>Duplicate</span></button>
             <button className="button-secondary compact-button" onClick={() => void rename()} disabled={!definition || !dirty || !API_BASE_URL}><span>Rename</span></button>
             <button className="button-secondary compact-button" onClick={() => void removeTopology()} disabled={!definition || !API_BASE_URL}><span>Delete</span></button>
@@ -1259,7 +1266,7 @@ export function TopologyPage() {
       {error && <div className="submit-notice notice-warning" role="alert"><Info size={15} /><span>{error}</span></div>}
       {!API_BASE_URL && <div className="submit-notice notice-warning" role="status"><Info size={15} /><span>Topology management requires the configured backend API. No local-only changes will be presented as saved.</span></div>}
       {viewMode === "LIVE" && liveTopology && <div className="submit-notice notice-info"><Info size={15} /><span>Read-only LIVE discovery snapshot · {new Date(liveTopology.snapshot_timestamp).toLocaleString()} · {liveTopology.snapshot_status}. This snapshot is not a DESIGN topology and cannot be edited or activated as a design.</span></div>}
-      {viewMode === "DESIGN" && !active && <div className="submit-notice notice-info"><Info size={15} /><span>Only an explicitly activated DESIGN topology is used by intent planning. Saving or activating does not start Mininet or install flows.</span></div>}
+      {viewMode === "DESIGN" && !activeTopology && <div className="submit-notice notice-info"><Info size={15} /><span>Only an explicitly activated DESIGN topology is used by intent planning. Saving or activating does not start Mininet or install flows.</span></div>}
 
       <Panel className="topology-panel">
         <div className="topology-canvas-header">

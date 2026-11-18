@@ -165,6 +165,42 @@ def test_catalog_versions_active_switching_duplicate_rename_and_delete(api_clien
     assert catalog.active() is None
 
 
+def test_activating_historical_version_preserves_newer_versions(api_client):
+    client, catalog = api_client
+    version_one = catalog.create(_diamond_topology())
+    version_two = catalog.update(
+        version_one.id,
+        1,
+        TopologyDefinitionInput(
+            name="Revised planning diamond",
+            graph=version_one.graph,
+            positions=version_one.positions,
+        ),
+    )
+
+    activated_two = client.post(
+        f"/api/v1/topologies/{version_one.id}/activate",
+        json={"version": 2},
+    )
+    assert activated_two.status_code == 200, activated_two.text
+    assert activated_two.json()["topology"]["version"] == 2
+
+    activated_one = client.post(
+        f"/api/v1/topologies/{version_one.id}/activate",
+        json={"version": 1},
+    )
+    assert activated_one.status_code == 200, activated_one.text
+    assert activated_one.json()["topology"]["version"] == 1
+    assert catalog.active() == version_one
+    assert catalog.get(version_one.id, 2) == version_two
+    assert [item.version for item in catalog.versions(version_one.id)] == [2, 1]
+
+    refreshed_active = client.get("/api/v1/topologies/active")
+    assert refreshed_active.status_code == 200, refreshed_active.text
+    assert refreshed_active.json()["topology"]["version"] == 1
+    assert TopologyCatalog(catalog.path).active() == version_one
+
+
 def test_catalog_rejects_stale_version_update(api_client):
     _, catalog = api_client
     topology = catalog.create(_diamond_topology())
