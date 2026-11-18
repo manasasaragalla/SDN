@@ -1,3 +1,5 @@
+import { formatApiErrorDetail } from "@/lib/api-error-detail.mjs";
+
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "");
 export const isApiConfigured = Boolean(API_BASE_URL);
 export const AUTH_DISABLED =
@@ -42,10 +44,11 @@ export async function apiRequest<T>(
 
   if (!response.ok) {
     const payload = await response.json().catch(() => null) as
-      | { detail?: string }
+      | { detail?: unknown }
       | null;
     throw new ApiRequestError(
-      payload?.detail ?? `Backend request failed with HTTP ${response.status}.`,
+      formatApiErrorDetail(payload?.detail)
+        ?? `Backend request failed with HTTP ${response.status}.`,
       response.status,
     );
   }

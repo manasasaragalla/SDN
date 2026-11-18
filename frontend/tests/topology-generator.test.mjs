@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { generateRandomTopology } from "../src/lib/topology-generator.ts";
+import { nextAvailableAttachmentPort } from "../src/lib/topology-port-allocation.ts";
 
 const settings = (overrides = {}) => ({
   name: "Generated test",
@@ -69,6 +70,50 @@ test("the same seed and settings produce identical topology data", () => {
   const first = generateRandomTopology(settings());
   const second = generateRandomTopology(settings());
   assert.deepEqual(first, second);
+});
+
+test("adding a host to the default seed-42 topology uses an unoccupied s1 port", () => {
+  const { topology } = generateRandomTopology(settings({
+    name: "test1",
+    switchCount: 6,
+    hostCount: 6,
+    pattern: "RANDOM",
+    extraLinks: 2,
+    bandwidthMinMbps: 20,
+    bandwidthMaxMbps: 100,
+    delayMinMs: 1,
+    delayMaxMs: 10,
+    packetLossMinPercent: 0,
+    packetLossMaxPercent: 1,
+    seed: "42",
+  }));
+  const graph = topology.graph;
+  const nodes = [
+    ...Object.keys(graph.switches).map((id) => ({ id, data: { kind: "switch" } })),
+    ...Object.values(graph.hosts).map((host) => ({
+      id: host.name,
+      data: { kind: "host", switchName: host.switch, switchPort: host.switch_port },
+    })),
+  ];
+  const edges = graph.links.map((link) => ({
+    source: link.node_a,
+    target: link.node_b,
+    data: { source_port: link.port_a, target_port: link.port_b },
+  }));
+
+  const selectedPort = nextAvailableAttachmentPort("s1", graph.switch_ports.s1, nodes, edges);
+  const occupiedPorts = [
+    ...Object.values(graph.hosts)
+      .filter((host) => host.switch === "s1")
+      .map((host) => host.switch_port),
+    ...graph.links.flatMap((link) => [
+      ...(link.node_a === "s1" ? [link.port_a] : []),
+      ...(link.node_b === "s1" ? [link.port_b] : []),
+    ]),
+  ];
+
+  assert.equal(selectedPort, 5);
+  assert.ok(!occupiedPorts.includes(selectedPort));
 });
 
 test("invalid generation ranges, pattern sizes, and extra-link counts are rejected", () => {

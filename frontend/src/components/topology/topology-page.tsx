@@ -43,6 +43,7 @@ import {
   type GeneratedTopology,
   type RandomTopologySettings,
 } from "@/lib/topology-generator";
+import { nextAvailableAttachmentPort } from "@/lib/topology-port-allocation";
 
 type NetworkData = {
   label: string;
@@ -736,24 +737,12 @@ export function TopologyPage() {
       return;
     }
     const name = nextName("h", nodes.map((node) => node.id));
-    const occupied = new Set(
-      nodes
-        .filter((node) => node.data.kind === "host" && node.data.switchName === switchNode.id)
-        .map((node) => node.data.switchPort),
+    const port = nextAvailableAttachmentPort(
+      switchNode.id,
+      switchNode.data.ports ?? [],
+      nodes,
+      edges,
     );
-    const switchPortInventory = switchNode.data.ports ?? [];
-    let port: number;
-    if (switchPortInventory.length) {
-      const availablePort = switchPortInventory.find((candidate) => !occupied.has(candidate));
-      if (availablePort === undefined) {
-        setError(`Switch ${switchNode.id} has no free configured ports. Add ports to its inventory first.`);
-        return;
-      }
-      port = availablePort;
-    } else {
-      port = 1;
-      while (occupied.has(port)) port += 1;
-    }
     const address = nextHostAddress(nodes);
     if (!address) {
       setError("No unused default IPv4/MAC address is available. Edit an existing host or import a larger address plan.");

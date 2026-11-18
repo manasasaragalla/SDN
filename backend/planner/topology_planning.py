@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from math import prod
+from math import isfinite, prod
 from typing import Any
 
 from backend.models.canonical_intent import CanonicalIntent, Comparison
@@ -186,6 +186,7 @@ def _path_facts(
     path: EnumeratedPath,
 ) -> tuple[dict[str, float | None], list[dict[str, Any]]]:
     path_links: list[Link] = []
+    complete_switch_links = True
     path_hosts = [
         graph.hosts[name]
         for name in (path.nodes[0], path.nodes[-1])
@@ -196,6 +197,7 @@ def _path_facts(
         if connection.kind == ConnectionKind.SWITCH_LINK:
             link = _link_for_connection(graph, connection)
             if link is None:
+                complete_switch_links = False
                 continue
             path_links.append(link)
             serialized_links.append(
@@ -230,16 +232,17 @@ def _path_facts(
                         "admin_up": host.attachment_admin_up,
                     }
                 )
-    link_capacities = [
-        link.bw_mbps for link in path_links if link.bw_mbps is not None
-    ] + [
-        host.attachment_capacity_mbps
-        for host in path_hosts
-        if host.attachment_capacity_mbps is not None
-    ]
+    link_capacities = [link.bw_mbps for link in path_links]
+    link_capacities.extend(
+        host.attachment_capacity_mbps for host in path_hosts
+    )
     capacity = (
         min(link_capacities)
-        if link_capacities and all(link.bw_mbps is not None for link in path_links)
+        if (
+            complete_switch_links
+            and link_capacities
+            and all(_valid_capacity(value) for value in link_capacities)
+        )
         else None
     )
     latency_values = [link.delay_ms for link in path_links]
@@ -247,19 +250,23 @@ def _path_facts(
     latency_values.extend(
         host.attachment_delay_ms
         for host in path_hosts
-        if host.attachment_delay_ms is not None
     )
     loss_values.extend(
         host.attachment_packet_loss_percent
         for host in path_hosts
-        if host.attachment_packet_loss_percent is not None
     )
-    latency = sum(latency_values) if latency_values and all(
-        value is not None for value in latency_values
+    latency = sum(latency_values) if (
+        complete_switch_links
+        and latency_values
+        and all(_valid_delay(value) for value in latency_values)
     ) else None
     loss = (
         100.0 * (1.0 - prod(1.0 - value / 100.0 for value in loss_values))
-        if loss_values and all(value is not None for value in loss_values)
+        if (
+            complete_switch_links
+            and loss_values
+            and all(_valid_packet_loss(value) for value in loss_values)
+        )
         else None
     )
     return (
@@ -269,6 +276,28 @@ def _path_facts(
             "packet_loss_percent": loss,
         },
         serialized_links,
+    )
+
+
+def _valid_finite_number(value: object) -> bool:
+    return (
+        type(value) in (int, float)
+        and isfinite(float(value))
+    )
+
+
+def _valid_capacity(value: object) -> bool:
+    return _valid_finite_number(value) and float(value) > 0
+
+
+def _valid_delay(value: object) -> bool:
+    return _valid_finite_number(value) and float(value) >= 0
+
+
+def _valid_packet_loss(value: object) -> bool:
+    return (
+        _valid_finite_number(value)
+        and 0 <= float(value) <= 100
     )
 
 

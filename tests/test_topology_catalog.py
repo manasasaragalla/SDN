@@ -29,6 +29,10 @@ def _diamond_topology():
                     mac="00:00:00:00:00:01",
                     switch="s1",
                     switch_port=1,
+                    attachment_capacity_mbps=1000,
+                    attachment_delay_ms=0,
+                    attachment_packet_loss_percent=0,
+                    attachment_admin_up=True,
                 ),
                 "h4": Host(
                     name="h4",
@@ -36,6 +40,10 @@ def _diamond_topology():
                     mac="00:00:00:00:00:04",
                     switch="s4",
                     switch_port=1,
+                    attachment_capacity_mbps=1000,
+                    attachment_delay_ms=0,
+                    attachment_packet_loss_percent=0,
+                    attachment_admin_up=True,
                 ),
             },
             links=[
@@ -390,6 +398,10 @@ def test_arbitrary_active_topology_supports_path_ranking_and_constraints(api_cli
                     mac="02:00:00:00:10:01",
                     switch="edge_l",
                     switch_port=1,
+                    attachment_capacity_mbps=100,
+                    attachment_delay_ms=0,
+                    attachment_packet_loss_percent=0,
+                    attachment_admin_up=True,
                 ),
                 "server": Host(
                     name="server",
@@ -397,6 +409,10 @@ def test_arbitrary_active_topology_supports_path_ranking_and_constraints(api_cli
                     mac="02:00:00:00:20:01",
                     switch="edge_r",
                     switch_port=1,
+                    attachment_capacity_mbps=100,
+                    attachment_delay_ms=0,
+                    attachment_packet_loss_percent=0,
+                    attachment_admin_up=True,
                 ),
             },
             links=[
@@ -691,6 +707,13 @@ def test_design_topology_invalid_ports_and_dpids_are_rejected():
 
     base = _diamond_topology().model_dump(mode="python")
     base["graph"]["links"][2]["port_a"] = 2
+    with pytest.raises(ValidationError, match="assigned more than once"):
+        TopologyDefinitionInput.model_validate(base)
+
+
+def test_design_topology_rejects_host_attachment_sharing_switch_link_port():
+    base = _diamond_topology().model_dump(mode="python")
+    base["graph"]["hosts"]["h1"]["switch_port"] = 2
     with pytest.raises(ValidationError, match="assigned more than once"):
         TopologyDefinitionInput.model_validate(base)
 
